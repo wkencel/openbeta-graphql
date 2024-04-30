@@ -87,29 +87,6 @@ export default class MutableClimbDataSource extends ClimbDataSource {
       parent.metadata.leaf = true
     }
 
-    // is there at least 1 boulder problem in the input?
-    const hasBouldering = userInput.some(entry => entry.disciplines?.bouldering ?? false)
-
-    // input has at least 1 boulder problem AND area is not a bouldering area
-    if (hasBouldering && !(parent.metadata?.isBoulder ?? false)) {
-      if (parent.climbs.length === 0) {
-        // if an area is empty, we're allowed to turn to into a bouldering area
-        parent.metadata.isBoulder = true
-      } else {
-        throw new UserInputError('Adding boulder problems to a route-only area is not allowed')
-      }
-    }
-
-    // It's ok to have empty disciplines obj in the input in case
-    // we just want to update other fields.
-    // However, if disciplines is non-empty, is there 1 non-boulder problem in the input?
-    const hasARouteClimb = userInput.some(({ disciplines }) =>
-      disciplines != null && Object.keys(disciplines).length > 0 && !(disciplines?.bouldering ?? false))
-
-    if (hasARouteClimb && (parent.metadata?.isBoulder ?? false)) {
-      throw new UserInputError('Adding route climbs to a bouldering area is not allowed')
-    }
-
     const cragGradeScales = gradeContextToGradeScales[parent.gradeContext]
     if (cragGradeScales == null) {
       throw new Error(`Area ${parent.area_name} (${parent.metadata.area_id.toUUID().toString()}) has  invalid grade context: '${parent.gradeContext}'`)
@@ -219,7 +196,7 @@ export default class MutableClimbDataSource extends ClimbDataSource {
       }
     }))
 
-    const rs = await (await this.climbModel.bulkWrite(bulk, { session })).toJSON()
+    const rs = (await this.climbModel.bulkWrite(bulk, { session })).toJSON()
 
     if (rs.ok === 1) {
       const idList: MUUID[] = []
