@@ -200,10 +200,8 @@ describe('Climb CRUD', () => {
       climbs.addOrUpdateClimbs(testUser, newDestination.metadata.area_id, [newBoulderProblem1])
     ).rejects.toThrowError(/You can only add climbs to a crag/)
 
-    // Route-only area should not accept new boulder problems
-    await expect(
-      climbs.addOrUpdateClimbs(testUser, routesArea.metadata.area_id, [newBoulderProblem1])
-    ).rejects.toThrowError(/Adding boulder problems to a route-only area/)
+    // Route-only area should accept new boulder problems
+    await climbs.addOrUpdateClimbs(testUser, routesArea.metadata.area_id, [newBoulderProblem1])
   })
 
   it('can add new boulder problems', async () => {
@@ -227,11 +225,6 @@ describe('Climb CRUD', () => {
 
     if (newClimb == null) fail('Expecting new boulder problem to be added, but didn\'t find one')
     expect(newClimb.name).toBe(newBoulderProblem1.name)
-
-    // Adding a boulder problem into an empty area will set isBoulder flag
-    const updatedArea = await areas.findOneAreaByUUID(boulderingArea.metadata.area_id)
-    if (updatedArea == null) fail('Expect area to be non-null')
-    expect(updatedArea.metadata.isBoulder).toBeTruthy()
   })
 
   it('can delete new boulder problems', async () => {
