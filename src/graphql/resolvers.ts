@@ -263,7 +263,7 @@ const resolvers = {
 
     media: async (node: any, args: any, { dataSources }: Context) => {
       const { media } = dataSources
-      return await media.findMediaByAreaId(node.metadata.area_id, node.ancestors)
+      return await media.findMediaByAreaId(node.metadata.area_id, null)
     },
 
     authorMetadata: getAuthorMetadataFromBaseNode,

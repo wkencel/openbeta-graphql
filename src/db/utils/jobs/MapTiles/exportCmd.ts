@@ -1,3 +1,4 @@
+import muuid from 'uuid-mongodb'
 import { WriteStream, createWriteStream, existsSync, mkdirSync } from 'node:fs'
 import {
   point,
@@ -7,15 +8,17 @@ import {
   Point,
   Polygon
 } from '@turf/helpers'
+import convexHull from '@turf/convex'
 import os from 'node:os'
-import { MUUID } from 'uuid-mongodb'
 
 import {
   connectDB,
   gracefulExit,
   getAreaModel,
-  getClimbModel
+  getClimbModel,
+  getOrganizationModel
 } from '../../../index.js'
+import { AggregateType } from '../../../AreaTypes.js'
 import { logger } from '../../../../logger.js'
 import { ClimbType } from '../../../ClimbTypes.js'
 import MutableMediaDataSource from '../../../../model/MutableMediaDataSource.js'
@@ -55,7 +58,8 @@ async function exportLeafCrags (): Promise<void> {
       ancestors,
       content,
       gradeContext,
-      climbs
+      climbs,
+      totalClimbs
     } = doc
 
     const ancestorArray = ancestors.split(',')
@@ -76,6 +80,7 @@ async function exportLeafCrags (): Promise<void> {
           discipline: type,
           grade: grades
         })),
+        totalClimbs,
         ancestors: ancestorArray,
         pathTokens,
         gradeContext
@@ -108,106 +113,183 @@ async function exportLeafCrags (): Promise<void> {
 }
 
 /**
- * Export crag groups as Geojson.  Crag groups are immediate parent of leaf areas (crags/boulders).
+ * Export areas as Geojson.  areas are immediate parent of leaf areas (crags/boulders).
  */
-async function exportCragGroups (): Promise<void> {
-  logger.info('Exporting crag groups')
-  const stream = createWriteStream(`${workingDir}/crag-groups.geojson`, { encoding: 'utf-8' })
+async function exportAreas (): Promise<void> {
+  logger.info('Exporting areas')
+  const stream = createWriteStream(`${workingDir}/areas.geojson`, { encoding: 'utf-8' })
 
   const model = getAreaModel()
 
-  interface CragGroup {
-    uuid: MUUID
-    name: string
-    polygon: Polygon
-    childAreaList: Array<{
-      name: string
-      uuid: MUUID
+  interface SimpleArea {
+    id: string
+    areaName: string
+    pathTokens: string[]
+    ancestors: string[]
+    metadata: {
+      isDestination: boolean
+      polygon: Polygon
       leftRightIndex: number
-    }>
+    }
+    media: []
+    children: any[]
+    totalClimbs: number
+    aggregate: AggregateType
   }
 
-  const rs: CragGroup[] = await model.aggregate([
-    { $match: { 'metadata.leaf': true } },
+  const childAreaProjection = {
+    _id: 0,
+    id: { $last: { $split: ['$ancestors', ','] } },
+    areaName: '$area_name',
+    totalClimbs: 1,
+    aggregate: 1
+  }
+
+  const rs: SimpleArea[] = await model.aggregate([
+    { $match: { 'metadata.leaf': false } },
     {
       $lookup: {
         from: 'areas',
-        localField: '_id',
-        foreignField: 'children',
-        as: 'parentCrags'
-      }
-    },
-    {
-      $match: {
-        $and: [{ parentCrags: { $type: 'array', $ne: [] } }]
-      }
-    },
-    {
-      $unwind: '$parentCrags'
-    },
-    {
-      $addFields: {
-        parentCrags: {
-          childId: '$metadata.area_id'
-        }
-      }
-    },
-    {
-      $group: {
-        _id: {
-          uuid: '$parentCrags.metadata.area_id',
-          name: '$parentCrags.area_name',
-          polygon: '$parentCrags.metadata.polygon'
-        },
-        childAreaList: {
-          $push: {
-            leftRightIndex: '$metadata.leftRightIndex',
-            uuid: '$metadata.area_id',
-            name: '$area_name'
-          }
-        }
+        localField: 'children',
+        foreignField: '_id',
+        as: 'childAreas',
+        pipeline: [{
+          $project: childAreaProjection
+        }, {
+          $sort: { 'metadata.leftRightIndex': 1 }
+        }]
       }
     },
     {
       $project: {
         _id: 0,
-        uuid: '$_id.uuid',
-        name: '$_id.name',
-        polygon: '$_id.polygon',
-        childAreaList: 1
+        id: { $last: { $split: ['$ancestors', ','] } },
+        areaName: '$area_name',
+        content: 1,
+        metadata: {
+          isDestination: 1,
+          polygon: 1,
+          leftRightIndex: 1
+        },
+        pathTokens: 1,
+        ancestors: { $split: ['$ancestors', ','] },
+        children: '$childAreas',
+        totalClimbs: 1,
+        aggregate: 1
       }
     }
   ])
 
   const features: Array<
   Feature<
-  Polygon,
-  {
-    name: string
-  }
+  Polygon
   >
   > = []
 
   for await (const doc of rs) {
     const polygonFeature = feature(
-      doc.polygon,
+      doc.metadata.polygon,
       {
-        type: 'crag-group',
-        id: doc.uuid.toUUID().toString(),
-        name: doc.name,
-        children: doc.childAreaList.map(({ uuid, name, leftRightIndex }) => ({
-          id: uuid.toUUID().toString(),
-          name,
-          lr: leftRightIndex
-        }))
+        type: 'areas',
+        ...doc,
+        media: await MutableMediaDataSource.getInstance().findMediaByAreaId(muuid.from(doc.id), {
+          width: 1,
+          height: 1,
+          mediaUrl: 1,
+          format: 1,
+          _id: 0,
+          'entityTags.targetId': 1,
+          'entityTags.ancestors': 1,
+          'entityTags.climbName': 1,
+          'entityTags.areaName': 1,
+          'entityTags.type': 1
+        },
+        true),
+        metadata: doc.metadata
       },
       {
-        id: doc.uuid.toUUID().toString()
+        id: doc.id
       }
     )
     features.push(polygonFeature)
   }
 
+  stream.write(JSON.stringify(featureCollection(features)) + os.EOL)
+  stream.close()
+}
+
+/**
+ * Export Local Climbing Orgs as Geojson (work in progress)
+ */
+async function exportLCOs (): Promise<void> {
+  logger.info('Exporting Local Climbing Orgs')
+  const stream = createWriteStream(`${workingDir}/organizations.geojson`, { encoding: 'utf-8' })
+  const model = getOrganizationModel()
+
+  const orgProjection = {
+    _change: 0,
+    _id: 0,
+    __v: 0
+  }
+
+  const areaProjection = {
+    name: '$area_name',
+    pathTokens: 1,
+    ancestors: 1,
+    uuid: '$metadata.area_id',
+    polygon: '$metadata.polygon'
+  }
+
+  const rs = await model.aggregate([{
+    $lookup: {
+      from: 'areas',
+      localField: 'associatedAreaIds',
+      foreignField: 'metadata.area_id',
+      as: 'associatedAreas',
+      pipeline: [{
+        $project: areaProjection
+      }]
+    }
+  }, {
+    $lookup: {
+      from: 'areas',
+      localField: 'excludedAreaIds',
+      foreignField: 'metadata.area_id',
+      as: 'excludedAreas',
+      pipeline: [{
+        $project: areaProjection
+      }]
+    }
+  }, {
+    $project: orgProjection
+  }])
+
+  const features: Array<
+  Feature<
+  Polygon,
+  {
+    id: string
+    name: string
+  }
+  >
+  > = []
+
+  // for each organization
+  for await (const org of rs) {
+    const members = org.associatedAreas.map((area: any) => feature(area.polygon))
+    const holes = org.excludedAreas.map((area: any) =>
+      feature(area.polygon)
+    )
+    const boundary = convexHull(featureCollection(members.concat(holes)))
+    if (boundary != null) {
+      features.push(
+        feature(boundary.geometry, {
+          id: org.orgId.toUUID().toString(),
+          name: org.displayName
+        })
+      )
+    }
+  }
   stream.write(JSON.stringify(featureCollection(features)) + os.EOL)
   stream.close()
 }
@@ -228,8 +310,9 @@ function prepareWorkingDir (): void {
 async function onDBConnected (): Promise<void> {
   logger.info('Start exporting crag data as Geojson')
   prepareWorkingDir()
+  await exportLCOs()
   await exportLeafCrags()
-  await exportCragGroups()
+  await exportAreas()
   await gracefulExit()
 }
 

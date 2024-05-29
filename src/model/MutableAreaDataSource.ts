@@ -620,6 +620,7 @@ export const newAreaHelper = (areaName: string, parentAncestors: string, parentP
   const ancestors = parentAncestors + ',' + uuid.toUUID().toString()
   return {
     _id,
+    uuid,
     shortCode: '',
     area_name: areaName,
     children: [],

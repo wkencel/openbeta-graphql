@@ -37,6 +37,12 @@ export type AreaType = IAreaProps & {
  */
 export interface IAreaProps extends AuthorMetadata {
   _id: mongoose.Types.ObjectId
+
+  /**
+   * Area unique id (in UUID format). Same as `metadata.area_id`.
+   */
+  uuid: MUUID
+
   /**
    * ShortCodes are short, globally uniqe codes that identify significant climbing areas
    **/

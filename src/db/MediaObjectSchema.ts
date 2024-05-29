@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
-
 import { MediaObject, EntityTag } from './MediaObjectTypes.js'
 import { PointSchema } from './ClimbSchema.js'
+import { MUUID } from 'uuid-mongodb'
 
 const { Schema } = mongoose
 
@@ -9,8 +9,12 @@ const UUID_TYPE = {
   type: 'object', value: { type: 'Buffer' }
 }
 
+const muuidTransform = (v: MUUID): string => {
+  return v.toUUID().toString()
+}
+
 const EntitySchema = new Schema<EntityTag>({
-  targetId: { ...UUID_TYPE, index: true, transform: (v: any) => v.toUUID().toString() },
+  targetId: { ...UUID_TYPE, index: true, transform: muuidTransform },
   climbName: { type: Schema.Types.String },
   areaName: { type: Schema.Types.String, required: true },
   type: { type: Schema.Types.Number, required: true },
