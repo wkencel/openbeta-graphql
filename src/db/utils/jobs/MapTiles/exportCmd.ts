@@ -19,7 +19,6 @@ import {
   getOrganizationModel
 } from '../../../index.js'
 import { AggregateType } from '../../../AreaTypes.js'
-import { OrganizationType } from '../../../OrganizationTypes.js'
 import { logger } from '../../../../logger.js'
 import { ClimbType } from '../../../ClimbTypes.js'
 import MutableMediaDataSource from '../../../../model/MutableMediaDataSource.js'
@@ -311,7 +310,7 @@ function prepareWorkingDir (): void {
 async function onDBConnected (): Promise<void> {
   logger.info('Start exporting crag data as Geojson')
   prepareWorkingDir()
-  // await exportLCOs()
+  await exportLCOs()
   await exportLeafCrags()
   await exportAreas()
   await gracefulExit()
