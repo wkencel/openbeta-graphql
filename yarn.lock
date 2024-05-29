@@ -5855,7 +5855,7 @@ mongodb@^4.13.0:
     "@aws-sdk/credential-providers" "^3.186.0"
     saslprep "^1.0.3"
 
-mongoose-lean-virtuals@0.9.1:
+mongoose-lean-virtuals@^0.9.1:
   version "0.9.1"
   resolved "https://registry.yarnpkg.com/mongoose-lean-virtuals/-/mongoose-lean-virtuals-0.9.1.tgz#7e5e8b7471237606d1a0d785f1b7240f86547d85"
   integrity sha512-jx4rhXuaQPam/lwef3z/FfYHlKdbFkDr9Qb7JEMeoa7y4pOuyJ83RkcNL25HRaoi4Bt71zKmV1cuJdv243t9aA==

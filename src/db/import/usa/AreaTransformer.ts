@@ -75,6 +75,7 @@ export const makeDBArea = (node: AreaNode): AreaType => {
   }
   return {
     _id,
+    uuid,
     shortCode: '',
     area_name: areaName,
     children: Array.from(children),

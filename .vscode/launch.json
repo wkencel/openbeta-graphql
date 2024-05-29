@@ -7,8 +7,8 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Crag Geojson",
-            "program": "${workspaceFolder}/src/db/export/CragGeojson/index.ts",
+            "name": "Generate map tiles",
+            "program": "${workspaceFolder}/src/db/utils/jobs/MapTiles/exportCmd.ts",
             "preLaunchTask": "tsc: build - tsconfig.json",
             "outFiles": [
                 "${workspaceFolder}/build/**/*.js"
