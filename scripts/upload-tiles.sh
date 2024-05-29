@@ -31,11 +31,4 @@ tippecanoe --force -o ${MAPTILES_WORKING_DIR}/areas.pmtiles \
 echo "**Uploading to remote storage"
 rclone copy ${MAPTILES_WORKING_DIR}/areas.pmtiles ${S3_DEST}
 
-echo "------ Generating organizations tiles file ------"
-tippecanoe --force -o ${MAPTILES_WORKING_DIR}/organizations.pmtiles \
-  -l organizations -n "Organizations" \
-  -zg ${MAPTILES_WORKING_DIR}/organizations.geojson
-
-echo "**Uploading to remote storage"
-rclone copy ${MAPTILES_WORKING_DIR}/areas.pmtiles ${S3_DEST}
 exit $?
