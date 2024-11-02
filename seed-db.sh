@@ -22,7 +22,11 @@ tar xzf $FILE_NAME
 
 . .env
 
-connStr="${MONGO_SCHEME}://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@${MONGO_SERVICE}/${MONGO_DBNAME}?authSource=${MONGO_AUTHDB}&tls=${MONGO_TLS}&replicaSet=${MONGO_REPLICA_SET_NAME}"
+connStr="${MONGO_SCHEME}://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@${MONGO_SERVICE}/${MONGO_DBNAME}?authSource=${MONGO_AUTHDB}&tls=${MONGO_TLS}"
+
+if [ -z "${MONGO_REPLICA_SET_NAME}" ]; then
+  connStr+="&replicaSet=${MONGO_REPLICA_SET_NAME}"
+fi
 
 mongorestore --uri "$connStr" -d=${MONGO_DBNAME} --gzip --drop ./db-dumps/staging/openbeta
 
