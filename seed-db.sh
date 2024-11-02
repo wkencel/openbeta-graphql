@@ -1,12 +1,12 @@
+#!/bin/bash
 # Rebuild your local database with a copy of OpenBeta staging database.
 #
-# To keep running time short, the script only downloads the remote 
+# To keep running time short, the script only downloads the remote
 # database dump file once.  Specify 'download' argument to force download.
 #
 # Syntax:
 #   ./seed-db.sh [download]
 #
-#!/bin/bash
 
 FILE_NAME="openbeta-stg-db.tar.gz"
 REMOTE_FILE="https://storage.googleapis.com/openbeta-dev-dbs/$FILE_NAME"
