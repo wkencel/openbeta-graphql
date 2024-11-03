@@ -252,11 +252,6 @@ type AreaShadow {
   """
   parent: ID
   """
-  The path hash is not computed at query time so this should be inexpensive to fetch.
-  and deliver. This hash can be used to invalidate
-  """
-  pathHash: String
-  """
   If this area has climbs as its direct descendents then we can loop in ONLY a pointer
   to these climbs, otherwise it will be null.
   """
