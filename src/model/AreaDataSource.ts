@@ -4,7 +4,7 @@ import muuid from 'uuid-mongodb'
 import bboxPolygon from '@turf/bbox-polygon'
 
 import { getAreaModel, getMediaObjectModel } from '../db/index.js'
-import { AreaType } from '../db/AreaTypes'
+import { AreaType, ShadowArea } from '../db/AreaTypes'
 import {
   AreaFilterParams,
   BBoxType,
@@ -18,6 +18,7 @@ import {
 import { getClimbModel } from '../db/ClimbSchema.js'
 import { ClimbGQLQueryType } from '../db/ClimbTypes.js'
 import { logger } from '../logger.js'
+import { muuidToString } from '../utils/helpers.js'
 
 export default class AreaDataSource extends MongoDataSource<AreaType> {
   areaModel = getAreaModel()
@@ -274,5 +275,31 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
       'metadata.leaf': zoom >= 11
     }
     return await this.areaModel.find(filter).lean()
+  }
+
+  async descendents (of: muuid.MUUID, previous?: ShadowArea[]): Promise<ShadowArea[]> {
+    previous = previous ?? []
+
+    // All descendents
+    const regex = new RegExp(`\\b${muuidToString(of)}\\b`)
+    const cursor = this.collection.find({ ancestors: regex })
+
+    previous.push()
+
+    let counter = 0
+    return await cursor.map((i) => {
+      // if (counter > 1000) {
+      //   throw new Error('Data volume exceeded. Try filtering data')
+      // }
+      const parentString = i.ancestors.split(',').at(-2)
+      let parent: muuid.MUUID | null = null
+
+      if (parentString !== undefined) {
+        parent = muuid.from(parentString)
+      }
+
+      counter += 1
+      return { area_name: i.area_name, uuid: i.metadata.area_id, parent } satisfies ShadowArea
+    }).toArray() as ShadowArea[]
   }
 }

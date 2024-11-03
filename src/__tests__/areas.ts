@@ -107,4 +107,52 @@ describe('areas API', () => {
       expect(areaResult.organizations[0].orgId).toBe(muuidToString(alphaOrg.orgId))
     })
   })
+
+  describe('area structure API', () => {
+    const structureQuery = `
+      query structure($parent: ID) {
+        structure(uuid: $parent) {
+          uuid
+          organizations {
+            orgId
+          }
+        }
+      }
+    `
+
+    it('retrieves traversal of all roots using auto-depth', async () => {
+      const response = await queryAPI({
+        query: structureQuery,
+        operationName: 'structure',
+        userUuid,
+        app
+      })
+
+      expect(response.statusCode).toBe(200)
+      const areaResult = response.body.data.area
+      expect(areaResult.uuid).toBe(muuidToString(ca.metadata.area_id))
+      // Even though alphaOrg associates with ca's parent, usa, it excludes
+      // ca and so should not be listed.
+      expect(areaResult.organizations).toHaveLength(0)
+    })
+
+    it('retrieves traversal of a high level root using auto-depth', async () => {
+      const response = await queryAPI({
+        query: structureQuery,
+        operationName: 'structure',
+        // Pass the usa top-level countru area
+        variables: { input: usa.metadata.area_id },
+        userUuid,
+        app
+      })
+      expect(response.statusCode).toBe(200)
+      const areaResult = response.body.data.area
+      expect(areaResult.uuid).toBe(muuidToString(ca.metadata.area_id))
+      // Even though alphaOrg associates with ca's parent, usa, it excludes
+      // ca and so should not be listed.
+      expect(areaResult.organizations).toHaveLength(0)
+    })
+
+    it('failure to properly constrain depth', async () => {})
+  })
 })

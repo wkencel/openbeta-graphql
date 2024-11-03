@@ -75,9 +75,18 @@ export const createIndexes = async (): Promise<void> => {
   await getUserModel().createIndexes()
 }
 
-export const gracefulExit = async (exitCode: number = 0): Promise<void> => {
+const SIGCODE = {
+  SIGINT: 130,
+  SIGTERM: 143
+}
+
+export const gracefulExit = async (exitCode: number | keyof typeof SIGCODE = 0): Promise<void> => {
   await mongoose.connection.close(function () {
-    logger.info('Gracefully exiting.')
+    logger.info('Gracefully exiting')
+    if (typeof exitCode === 'string') {
+      process.exit(SIGCODE[exitCode])
+    }
+
     process.exit(exitCode)
   })
 }
