@@ -10,6 +10,7 @@ pkgs.mkShell {
     mongodb-tools
     yarn
     mongodb-ce
+    mongodb-compass
   ];
 
   # MONGOMS_DOWNLOAD_URL = "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2404-8.0.1.tgz";
