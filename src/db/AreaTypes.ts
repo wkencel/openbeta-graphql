@@ -28,7 +28,7 @@ export type AreaType = IAreaProps & {
   metadata: IAreaMetadata
 }
 
-export type ShadowArea = Pick<IAreaProps, 'uuid' | 'area_name'> & { parent: IAreaProps['uuid'] | null }
+export type ShadowArea = Pick<IAreaProps, 'uuid' | 'area_name' | 'climbs'> & { parent: IAreaProps['uuid'] | null }
 
 /**
  * Properties that areas are expected to have.

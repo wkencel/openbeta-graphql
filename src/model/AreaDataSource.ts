@@ -1,5 +1,5 @@
 import { MongoDataSource } from 'apollo-datasource-mongodb'
-import { Filter } from 'mongodb'
+import { Filter, Document } from 'mongodb'
 import muuid from 'uuid-mongodb'
 import bboxPolygon from '@turf/bbox-polygon'
 
@@ -18,7 +18,15 @@ import {
 import { getClimbModel } from '../db/ClimbSchema.js'
 import { ClimbGQLQueryType } from '../db/ClimbTypes.js'
 import { logger } from '../logger.js'
-import { muuidToString } from '../utils/helpers.js'
+
+function shadowArea (doc: Document): ShadowArea {
+  return {
+    area_name: doc.area_name,
+    uuid: doc.uuid,
+    parent: doc.parent,
+    climbs: doc.climbs
+  }
+}
 
 export default class AreaDataSource extends MongoDataSource<AreaType> {
   areaModel = getAreaModel()
@@ -187,6 +195,7 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
     return await data.toArray()
   }
 
+  uuid
   /**
    * Get whole db stats
    * @returns
@@ -277,29 +286,81 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
     return await this.areaModel.find(filter).lean()
   }
 
-  async descendents (of: muuid.MUUID, previous?: ShadowArea[]): Promise<ShadowArea[]> {
-    previous = previous ?? []
-
-    // All descendents
-    const regex = new RegExp(`\\b${muuidToString(of)}\\b`)
-    const cursor = this.collection.find({ ancestors: regex })
-
-    previous.push()
-
-    let counter = 0
-    return await cursor.map((i) => {
-      // if (counter > 1000) {
-      //   throw new Error('Data volume exceeded. Try filtering data')
-      // }
-      const parentString = i.ancestors.split(',').at(-2)
-      let parent: muuid.MUUID | null = null
-
-      if (parentString !== undefined) {
-        parent = muuid.from(parentString)
+  /**
+   * Using the child relations we can do a graph lookup and flatten that result.
+   * I've put a leniant timeout of 500ms on the query to encourage proper loading
+   * patterns from api users.
+   *
+   * The timeout is a heuristic, sufficiently fast hardware may munch up a fair quantity
+   * of memory, but the docs say that this should be 100mb in the worst case?
+   * https://www.mongodb.com/docs/manual/reference/operator/aggregation/graphLookup/#memory
+   * someone more familair with mongo may want to double check that.
+   */
+  async descendents (ofArea: muuid.MUUID): Promise<ShadowArea[]> {
+    const cursor = this.collection.aggregate([
+      { $match: { 'metadata.area_id': ofArea, _deleting: { $exists: false } } },
+      {
+        $project:
+          {
+            _id: 1,
+            'metadata.area_id': 1,
+            area_name: 1,
+            children: 1
+          }
+      },
+      {
+        $graphLookup: {
+          from: this.collection.collectionName,
+          startWith: '$_id',
+          connectFromField: 'children',
+          connectToField: '_id',
+          as: 'descendants'
+        }
+      },
+      {
+        $unwind: {
+          path: '$descendants'
+        }
+      },
+      {
+        $replaceRoot:
+          {
+            newRoot: '$descendants'
+          }
+      },
+      // Sadly we need to duplicate work previously done to now look up the immediate parent of
+      // the area
+      {
+        $lookup:
+          {
+            from: 'areas',
+            localField: '_id',
+            foreignField: 'children',
+            as: 'parent'
+          }
+      },
+      {
+        $addFields:
+          {
+            uuid: '$metadata.area_id',
+            parent: {
+              $first: '$parent.metadata.area_id'
+            }
+          }
+      },
+      {
+        $project:
+          {
+            _id: 0,
+            uuid: 1,
+            area_name: 1,
+            parent: 1,
+            climbs: 1
+          }
       }
+    ])
+      .maxTimeMS(900)
 
-      counter += 1
-      return { area_name: i.area_name, uuid: i.metadata.area_id, parent } satisfies ShadowArea
-    }).toArray() as ShadowArea[]
+    return await cursor.map(shadowArea).toArray()
   }
 }

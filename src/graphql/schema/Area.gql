@@ -11,7 +11,7 @@ type Query {
   ): [CragsNear]
   cragsWithin(filter: SearchWithinFilter): [Area]
   countries: [Area]
-  structure(parent: ID, filter: StructureQuery): [AreaShadow!]!
+  structure(parent: ID!, filter: StructureQuery): [AreaShadow!]!
 }
 
 "A climbing area, wall or crag"

@@ -1,14 +1,14 @@
 import muuid, { MUUID } from 'uuid-mongodb'
 import { AreaType, ShadowArea } from '../../db/AreaTypes'
 import { Context } from '../../types'
+import { validate } from 'uuid'
 
-interface StructureQuery extends Partial<{
+interface StructureQuery {
   parent: MUUID
   filter: Partial<{
     depth: number
-
   }>
-}> {}
+}
 
 const AreaQueries = {
   cragsWithin: async (_, { filter }, { dataSources }: Context): Promise<AreaType | null> => {
@@ -24,33 +24,11 @@ const AreaQueries = {
 
   structure: async (_, params: StructureQuery, { dataSources }: Context): Promise<ShadowArea[]> => {
     const { areas } = dataSources
-    const data: ShadowArea[] = []
-    const roots: MUUID[] = []
-
-    console.time('structure query')
-
-    if (params.parent !== undefined) {
-      // A parent has been specified so we can eval just that node
-      roots.push(params.parent)
-    } else {
-      roots.push(...(await areas.listAllCountries()).map(i => i.metadata.area_id))
+    if (!(typeof params.parent === 'string' && validate(params.parent))) {
+      throw new Error('Malformed UUID string')
     }
 
-    // For each root that we're interested in, we want to scan accross
-    for (const root of roots) {
-      const area = await areas.findOneAreaByUUID(root)
-      const parent = area.ancestors.split(',').pop()
-      if (parent === undefined) continue
-
-      data.push({ uuid: root, area_name: area.area_name, parent: muuid.from(parent) })
-      // descendents takes care of its own look-ahead to make sure the query
-      // does not munch up stupid bandwidth
-      data.push(...(await areas.descendents(root)))
-    }
-
-    console.timeEnd('structure query')
-
-    return data
+    return await areas.descendents(muuid.from(params.parent))
   }
 }
 
