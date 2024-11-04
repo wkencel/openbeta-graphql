@@ -287,7 +287,7 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
    * https://www.mongodb.com/docs/manual/reference/operator/aggregation/graphLookup/#memory
    * someone more familair with mongo may want to double check that.
    */
-  async descendants (ofArea: muuid.MUUID, filter?: {
+  async descendants (ofArea?: muuid.MUUID, filter?: {
     projection?: Record<keyof Partial<IAreaProps & { parent: '' }>, boolean>
     filter?: Partial<DescendantQuery>
   }): Promise<ShadowArea[]> {
@@ -300,8 +300,20 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
       }
     }
 
-    const pipeline: Document[] = [
-      { $match: { 'metadata.area_id': ofArea, _deleting: { $exists: false } } },
+    const pipeline: Document[] = []
+
+    if (ofArea === undefined) {
+      // in this case we can filter on the max depth
+    }
+
+    pipeline.push(...[
+      {
+        $match: {
+          ...(ofArea !== undefined ? { 'metadata.area_id': ofArea } : {}),
+          ...(filter?.filter?.maxDepth !== undefined ? { $expr: { $lte: [{ $size: '$pathTokens' }, filter?.filter?.maxDepth] } } : {}),
+          _deleting: { $exists: false }
+        }
+      },
       {
         $project:
         {
@@ -350,7 +362,7 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
           ...filter?.projection
         }
       }
-    ]
+    ])
 
     if (filter?.projection?.parent ?? false) {
       pipeline.push(

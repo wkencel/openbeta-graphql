@@ -25,6 +25,13 @@ const AreaQueries: IResolverObject = {
 
   structure: async (_, params: StructureQuery, { dataSources }: Context, info): Promise<ShadowArea[]> => {
     const { areas } = dataSources
+    if (params.parent === undefined) {
+      return await areas.descendants(undefined, {
+        projection: flatFieldSet(info)[0],
+        filter: { ...params.filter, maxDepth: 2 }
+      })
+    }
+
     if (!(typeof params.parent === 'string' && validate(params.parent))) {
       throw new Error('Malformed UUID string')
     }

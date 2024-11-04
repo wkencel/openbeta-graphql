@@ -1,5 +1,5 @@
 import { ApolloServer } from 'apollo-server-express'
-import muuid from 'uuid-mongodb'
+import muuid, { MUUID } from 'uuid-mongodb'
 import { jest } from '@jest/globals'
 import MutableAreaDataSource from '../model/MutableAreaDataSource.js'
 import MutableOrganizationDataSource from '../model/MutableOrganizationDataSource.js'
@@ -110,49 +110,63 @@ describe('areas API', () => {
 
   describe('area structure API', () => {
     const structureQuery = `
-      query structure($parent: ID) {
-        structure(uuid: $parent) {
-          uuid
-          organizations {
-            orgId
+        query structure($parent: ID!) {
+          structure(parent: $parent) {
+            parent
+            uuid
+            area_name
+            climbs
           }
         }
-      }
     `
 
-    it('retrieves ', async () => {
+    // Structure queries do not do write operations so we can build this once
+    beforeEach(async () => {
+      const maxDepth = 4
+      const maxBreadth = 3
+
+      // So for the purposes of this test we will do a simple tree
+      async function grow (from: MUUID, depth: number = 0): Promise<void> {
+        if (depth >= maxDepth) return
+        for (const idx of Array.from({ length: maxBreadth }, (_, i) => i + 1)) {
+          const newArea = await areas.addArea(user, `${depth}-${idx}`, from)
+          await grow(newArea.metadata.area_id, depth + 1)
+        }
+      }
+
+      await grow(usa.metadata.area_id)
+    })
+
+    it('retrieves the structure of a given area', async () => {
       const response = await queryAPI({
         query: structureQuery,
+        operationName: 'structure',
+        variables: { parent: usa.metadata.area_id },
+        userUuid,
+        app
+      })
+
+      expect(response.statusCode).toBe(200)
+    })
+
+    it('should allow no parent to be supplied and get a shallow result', async () => {
+      const response = await queryAPI({
+        query: `
+        query structure {
+          structure {
+            parent
+            uuid
+            area_name
+            climbs
+          }
+        }
+    `,
         operationName: 'structure',
         userUuid,
         app
       })
 
       expect(response.statusCode).toBe(200)
-      const areaResult = response.body.data.area
-      expect(areaResult.uuid).toBe(muuidToString(ca.metadata.area_id))
-      // Even though alphaOrg associates with ca's parent, usa, it excludes
-      // ca and so should not be listed.
-      expect(areaResult.organizations).toHaveLength(0)
     })
-
-    it('retrieves traversal of a high level root using auto-depth', async () => {
-      const response = await queryAPI({
-        query: structureQuery,
-        operationName: 'structure',
-        // Pass the usa top-level countru area
-        variables: { input: usa.metadata.area_id },
-        userUuid,
-        app
-      })
-      expect(response.statusCode).toBe(200)
-      const areaResult = response.body.data.area
-      expect(areaResult.uuid).toBe(muuidToString(ca.metadata.area_id))
-      // Even though alphaOrg associates with ca's parent, usa, it excludes
-      // ca and so should not be listed.
-      expect(areaResult.organizations).toHaveLength(0)
-    })
-
-    it('failure to properly constrain depth', async () => {})
   })
 })
