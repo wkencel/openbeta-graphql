@@ -5,6 +5,7 @@
 import muuid, { MUUID } from 'uuid-mongodb'
 import { AuthUserType } from '../../types.js'
 import { logger } from '../../logger.js'
+import type { ApolloServerPlugin } from 'apollo-server-plugin-base'
 
 export const localDevBypassAuthContext = (() => {
   const testUUID: MUUID = muuid.v4()
@@ -19,3 +20,15 @@ export const localDevBypassAuthContext = (() => {
     return { user }
   }
 })()
+
+export const loggerPlugin: ApolloServerPlugin = {
+  async requestDidStart (ctx) {
+    const startTime = process.uptime()
+    return {
+      async willSendResponse () {
+        ctx.logger.info(ctx.request.query)
+        ctx.logger.info(`query resolved in ${((process.uptime() - startTime) * 1000).toFixed(4)}ms`)
+      }
+    }
+  }
+}

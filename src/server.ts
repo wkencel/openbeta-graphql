@@ -10,7 +10,7 @@ import MutableClimbDataSource from './model/MutableClimbDataSource.js'
 import TickDataSource from './model/TickDataSource.js'
 import { createContext } from './auth/middleware.js'
 import permissions from './auth/permissions.js'
-import { localDevBypassAuthContext } from './auth/local-dev/middleware.js'
+import { localDevBypassAuthContext, loggerPlugin as profilerPlugin } from './auth/local-dev/middleware.js'
 import localDevBypassAuthPermissions from './auth/local-dev/permissions.js'
 import XMediaDataSource from './model/XMediaDataSource.js'
 import PostDataSource from './model/PostDataSource.js'
@@ -51,7 +51,14 @@ export async function createServer (): Promise<{ app: express.Application, serve
     schema,
     context: process.env.LOCAL_DEV_BYPASS_AUTH === 'true' ? localDevBypassAuthContext : createContext,
     dataSources,
-    cache: 'bounded'
+    cache: 'bounded',
+    // this could be extracted into a seperate settings flag,
+    // but should not make it into production.
+    plugins: process.env.LOCAL_DEV_BYPASS_AUTH === 'true'
+      ? [
+          profilerPlugin
+        ]
+      : undefined
   })
   // server must be started before applying middleware
   await server.start()

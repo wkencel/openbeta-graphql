@@ -4,7 +4,7 @@ import muuid from 'uuid-mongodb'
 import bboxPolygon from '@turf/bbox-polygon'
 
 import { getAreaModel, getMediaObjectModel } from '../db/index.js'
-import { AreaType, ShadowArea } from '../db/AreaTypes'
+import { AreaType, IAreaProps, ShadowArea } from '../db/AreaTypes'
 import {
   AreaFilterParams,
   BBoxType,
@@ -18,15 +18,6 @@ import {
 import { getClimbModel } from '../db/ClimbSchema.js'
 import { ClimbGQLQueryType } from '../db/ClimbTypes.js'
 import { logger } from '../logger.js'
-
-function shadowArea (doc: Document): ShadowArea {
-  return {
-    area_name: doc.area_name,
-    uuid: doc.uuid,
-    parent: doc.parent,
-    climbs: doc.climbs
-  }
-}
 
 export default class AreaDataSource extends MongoDataSource<AreaType> {
   areaModel = getAreaModel()
@@ -296,17 +287,32 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
    * https://www.mongodb.com/docs/manual/reference/operator/aggregation/graphLookup/#memory
    * someone more familair with mongo may want to double check that.
    */
-  async descendents (ofArea: muuid.MUUID): Promise<ShadowArea[]> {
-    const cursor = this.collection.aggregate([
+  async descendants (ofArea: muuid.MUUID, filter?: {
+    projection?: Record<keyof Partial<IAreaProps & { parent: '' }>, boolean>
+    filter?: Partial<DescendantQuery>
+  }): Promise<ShadowArea[]> {
+    function shadowArea (doc: Document): ShadowArea {
+      return {
+        area_name: doc.area_name,
+        uuid: doc.uuid,
+        parent: doc.parent,
+        climbs: doc.climbs
+      }
+    }
+
+    const pipeline: Document[] = [
       { $match: { 'metadata.area_id': ofArea, _deleting: { $exists: false } } },
       {
         $project:
-          {
-            _id: 1,
-            'metadata.area_id': 1,
-            area_name: 1,
-            children: 1
-          }
+        {
+          // We need these two fields to make the structure query,
+          // all else are optional.
+          _id: 1,
+          children: 1,
+
+          'metadata.area_id': filter?.projection?.uuid,
+          ...filter?.projection
+        }
       },
       {
         $graphLookup: {
@@ -314,7 +320,13 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
           startWith: '$_id',
           connectFromField: 'children',
           connectToField: '_id',
-          as: 'descendants'
+          as: 'descendants',
+          // We can pass in a max depth if it is supplied to us.
+          ...(typeof filter?.filter?.maxDepth === 'number'
+            ? {
+                maxDepth: filter?.filter?.maxDepth
+              }
+            : {})
         }
       },
       {
@@ -324,43 +336,57 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
       },
       {
         $replaceRoot:
-          {
-            newRoot: '$descendants'
-          }
+        {
+          newRoot: '$descendants'
+        }
       },
-      // Sadly we need to duplicate work previously done to now look up the immediate parent of
-      // the area
       {
-        $lookup:
+        $project:
+        {
+          // We need these two fields to make the structure query,
+          // all else are optional.
+          _id: 1,
+          'metadata.area_id': filter?.projection?.uuid,
+          ...filter?.projection
+        }
+      }
+    ]
+
+    if (filter?.projection?.parent ?? false) {
+      pipeline.push(
+        // Sadly we need to duplicate work previously done to now look up the immediate parent of
+        // the area
+        {
+          $lookup:
           {
             from: 'areas',
             localField: '_id',
             foreignField: 'children',
             as: 'parent'
           }
-      },
-      {
-        $addFields:
-          {
-            uuid: '$metadata.area_id',
-            parent: {
-              $first: '$parent.metadata.area_id'
-            }
-          }
-      },
-      {
-        $project:
-          {
-            _id: 0,
-            uuid: 1,
-            area_name: 1,
-            parent: 1,
-            climbs: 1
-          }
-      }
-    ])
-      .maxTimeMS(900)
+        }
+      )
+    }
 
-    return await cursor.map(shadowArea).toArray()
+    pipeline.push({
+      $addFields:
+      {
+        uuid: '$metadata.area_id',
+        parent: {
+          $first: '$parent.metadata.area_id'
+        }
+      }
+    })
+
+    return await this
+      .collection
+      .aggregate(pipeline)
+      .maxTimeMS(900)
+      .map(shadowArea)
+      .toArray()
   }
+}
+
+export interface DescendantQuery {
+  maxDepth: number
 }
