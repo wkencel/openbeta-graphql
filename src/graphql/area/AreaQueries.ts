@@ -2,15 +2,16 @@ import muuid, { MUUID } from 'uuid-mongodb'
 import { AreaType, ShadowArea } from '../../db/AreaTypes'
 import { Context } from '../../types'
 import { validate } from 'uuid'
+import { IResolverObject } from 'graphql-middleware/dist/types'
+import { flatFieldSet } from '../gql-parse.js'
+import { DescendantQuery } from '../../model/AreaDataSource'
 
 interface StructureQuery {
   parent: MUUID
-  filter: Partial<{
-    depth: number
-  }>
+  filter: Partial<DescendantQuery>
 }
 
-const AreaQueries = {
+const AreaQueries: IResolverObject = {
   cragsWithin: async (_, { filter }, { dataSources }: Context): Promise<AreaType | null> => {
     const { areas } = dataSources
     const { bbox, zoom } = filter
@@ -22,13 +23,16 @@ const AreaQueries = {
     return await areas.listAllCountries()
   },
 
-  structure: async (_, params: StructureQuery, { dataSources }: Context): Promise<ShadowArea[]> => {
+  structure: async (_, params: StructureQuery, { dataSources }: Context, info): Promise<ShadowArea[]> => {
     const { areas } = dataSources
     if (!(typeof params.parent === 'string' && validate(params.parent))) {
       throw new Error('Malformed UUID string')
     }
 
-    return await areas.descendents(muuid.from(params.parent))
+    return await areas.descendants(muuid.from(params.parent), {
+      projection: flatFieldSet(info)[0],
+      filter: params.filter
+    })
   }
 }
 

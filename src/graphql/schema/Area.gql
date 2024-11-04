@@ -191,7 +191,7 @@ query will cut off if it looks like it's about to deliver some rediculous number
 records.
 """
 input StructureQuery {
-  depth: Int
+  maxDepth: Int
 }
 
 enum Field {

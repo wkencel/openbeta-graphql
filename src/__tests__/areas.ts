@@ -120,7 +120,7 @@ describe('areas API', () => {
       }
     `
 
-    it('retrieves traversal of all roots using auto-depth', async () => {
+    it('retrieves ', async () => {
       const response = await queryAPI({
         query: structureQuery,
         operationName: 'structure',
