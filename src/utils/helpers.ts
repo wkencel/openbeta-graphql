@@ -1,6 +1,6 @@
 import { MUUID } from 'uuid-mongodb'
 import { Point } from '@turf/helpers'
-import { ClientSession } from 'mongoose'
+import { ClientSession, ClientSessionOptions } from 'mongoose'
 
 export const muuidToString = (m: MUUID): string => m.toUUID().toString()
 
@@ -35,4 +35,25 @@ export const withTransaction = async <T>(session: ClientSession, closure: () => 
     return result
   })
   return result
+}
+
+interface SessionStartable {
+  startSession: (options?: ClientSessionOptions) => Promise<ClientSession>
+}
+
+export const useOrCreateTransaction = async<T>(owner: SessionStartable, session: ClientSession | undefined, closure: (session: ClientSession) => Promise<T>): Promise<T | undefined> => {
+  const reifiedSession = session ?? await owner.startSession()
+
+  try {
+    if (reifiedSession.inTransaction()) {
+      return await closure(reifiedSession)
+    } else {
+      return await withTransaction(reifiedSession, async () => await closure(reifiedSession))
+    }
+  } finally {
+    // If the session was created in this context we can close it out.
+    if (session == null) {
+      await reifiedSession.endSession()
+    }
+  }
 }
