@@ -67,13 +67,13 @@ async function exportLeafCrags (): Promise<void> {
     const {
       metadata,
       area_name: areaName,
-      pathTokens,
-      ancestors,
       content,
       gradeContext,
       climbs,
       totalClimbs
     } = doc
+
+    const { pathTokens, ancestors } = doc.embeddedRelations
 
     const ancestorArray = ancestors.split(',')
     const pointFeature = point(

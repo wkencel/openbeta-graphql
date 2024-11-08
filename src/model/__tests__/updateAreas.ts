@@ -58,21 +58,21 @@ describe('Areas', () => {
 
     let canadaInDb = await areas.findOneAreaByUUID(canada.metadata.area_id)
 
-    expect(canadaInDb.children.length).toEqual(1)
-    expect(canadaInDb.children[0]).toEqual(bc?._id)
+    expect(canadaInDb.embeddedRelations.children.length).toEqual(1)
+    expect(canadaInDb.embeddedRelations.children[0]).toEqual(bc?._id)
 
     // Add another area to the country
     const theBug = await areas.addArea(testUser, 'The Bugaboos', canada.metadata.area_id)
 
     canadaInDb = await areas.findOneAreaByUUID(canada.metadata.area_id)
-    expect(canadaInDb.children.length).toEqual(2)
-    expect(canadaInDb.children[1]).toEqual(theBug?._id)
+    expect(canadaInDb.embeddedRelations.children.length).toEqual(2)
+    expect(canadaInDb.embeddedRelations.children[1]).toEqual(theBug?._id)
 
     // Verify paths and ancestors
     if (theBug != null) { // make TS happy
-      expect(theBug.ancestors)
+      expect(theBug.embeddedRelations.ancestors)
         .toEqual(`${canada.metadata.area_id.toUUID().toString()},${theBug?.metadata.area_id.toUUID().toString()}`)
-      expect(theBug.pathTokens)
+      expect(theBug.embeddedRelations.pathTokens)
         .toEqual([canada.area_name, theBug.area_name])
     }
   })
@@ -94,7 +94,7 @@ describe('Areas', () => {
     // Reload the parent
     parent = await areas.findOneAreaByUUID(parent.metadata.area_id)
     expect(parent.climbs).toHaveLength(0)
-    expect(parent.children).toHaveLength(1)
+    expect(parent.embeddedRelations.children).toHaveLength(1)
     // make sure leaf and boulder flag are cleared
     expect(parent.metadata.leaf).toBeFalsy()
     expect(parent.metadata.isBoulder).toBeFalsy()
@@ -105,8 +105,8 @@ describe('Areas', () => {
     const area = await areas.addArea(testUser, 'Table mountain', null, 'zaf')
 
     const countryInDb = await areas.findOneAreaByUUID(country.metadata.area_id)
-    expect(countryInDb.children.length).toEqual(1)
-    expect(countryInDb.children[0]).toEqual(area?._id)
+    expect(countryInDb.embeddedRelations.children.length).toEqual(1)
+    expect(countryInDb.embeddedRelations.children[0]).toEqual(area?._id)
   })
 
   it('should set crag/boulder attribute when adding new areas', async () => {
@@ -178,10 +178,10 @@ describe('Areas', () => {
 
     let usaInDB = await areas.findOneAreaByUUID(usa.metadata.area_id)
     // verify number of child areas in parent
-    expect(usaInDB.children as any[]).toHaveLength(3)
+    expect(usaInDB.embeddedRelations.children as any[]).toHaveLength(3)
 
     // verify child area IDs in parent
-    expect(usaInDB.children).toEqual([
+    expect(usaInDB.embeddedRelations.children).toEqual([
       ca._id,
       or._id,
       wa._id
@@ -192,8 +192,8 @@ describe('Areas', () => {
     usaInDB = await areas.findOneAreaByUUID(usa.metadata.area_id)
 
     // verify child area IDs (one less than before)
-    expect(usaInDB.children as any[]).toHaveLength(2)
-    expect(usaInDB.children).toEqual([
+    expect(usaInDB.embeddedRelations.children as any[]).toHaveLength(2)
+    expect(usaInDB.embeddedRelations.children).toEqual([
       or._id,
       wa._id
     ])

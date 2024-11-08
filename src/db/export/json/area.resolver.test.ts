@@ -43,7 +43,7 @@ describe('area resolvers', () => {
     ]
 
     function assertSubPathResolver (path: string[], expected: string) {
-      expect(resolveAreaSubPath({ pathTokens: path })).toBe(expected)
+      expect(resolveAreaSubPath({ embeddedRelations:  { pathTokens: path  }})).toBe(expected)
     }
 
     testCases.forEach(testCase => {

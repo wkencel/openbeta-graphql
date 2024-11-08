@@ -58,29 +58,21 @@ export interface IAreaProps extends AuthorMetadata {
    * unique and are subject to change.
    **/
   area_name: string
+
+  /**
+   * We currently only support a single parent for each area, this field is the source
+   * of truth that other embedded fields will be derived from.
+   */
+  parent?: mongoose.Types.ObjectId
+
   /**
    * The climbs that appear within this area (Only applies for leaf nodes).
    * Only areas that are permitted direct climb children will have these, and these
    * are conventionally not allowed to have area children.
    */
   climbs: Array<MUUID | ClimbType>
-  /**
-   * All child area documents that are contained within this area.
-   * This has a strong relation to the areas collection, and contains only direct
-   * child areas - rather than all descendents.
-   */
-  children: mongoose.Types.ObjectId[]
-  /**
-   * ancestors ids of this areas parents, traversing up the heirarchy to the root area.
-   * This is encoded as a string, but is really an array delimited by comma.
-   * @see https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-materialized-paths/
-   */
-  ancestors: string
-  /**
-   * pathTokens names of this areas parents, traversing up the heirarchy to the root area
-   * with the current area being the last element.
-   */
-  pathTokens: string[]
+
+  embeddedRelations: AreaEmbeddedRelations
 
   gradeContext: GradeContexts
   /**
@@ -114,6 +106,34 @@ export interface IAreaProps extends AuthorMetadata {
   _change?: ChangeRecordMetadataType
   /** Used to delete an area.  See https://www.mongodb.com/docs/manual/core/index-ttl/ */
   _deleting?: Date
+}
+
+export interface AreaEmbeddedRelations {
+  /**
+   * All child area documents that are contained within this area.
+   * This has a strong relation to the areas collection, and contains only direct
+   * child areas - rather than all descendents.
+   *
+   * computed from the remote documents parent field
+   */
+  children: mongoose.Types.ObjectId[]
+  /**
+   * ancestors ids of this areas parents, traversing up the heirarchy to the root area.
+   * This is encoded as a string, but is really an array delimited by comma.
+   * @see https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-materialized-paths/
+   *
+   * computed from the remote documents parent field
+   */
+  ancestors: string
+  /**
+   * Trace ancestors back to root, can be used as an index rather than computing
+  */
+  ancestorIndex: mongoose.Types.ObjectId[]
+  /**
+   * pathTokens names of this areas parents, traversing up the heirarchy to the root area
+   * with the current area being the last element.
+   */
+  pathTokens: string[]
 }
 
 export interface IAreaMetadata {

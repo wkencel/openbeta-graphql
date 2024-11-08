@@ -63,7 +63,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
     let neighbours: string[]
 
     if (parent !== null) {
-      neighbours = (await this.areaModel.find({ _id: parent.children })).map(i => i.area_name)
+      neighbours = (await this.areaModel.find({ _id: parent.embeddedRelations.children })).map(i => i.area_name)
     } else {
       neighbours = (await this.areaModel.find({ pathTokens: { $size: 1 } })).map(i => i.area_name)
     }
@@ -209,7 +209,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
     const parent = await this.areaModel.findOne(parentFilter).session(session).orFail(new UserInputError(`[${areaName}]: Expecting country or area parent, found none with id ${parentUuid.toString()}`))
 
     if (parent.metadata.leaf || (parent.metadata?.isBoulder ?? false)) {
-      if (parent.children.length > 0 || parent.climbs.length > 0) {
+      if (parent.embeddedRelations.children.length > 0 || parent.climbs.length > 0) {
         throw new UserInputError(`[${areaName}]: Adding new areas to a leaf or boulder area is not allowed.`)
       }
       // No children.  It's ok to continue turning an empty crag/boulder into an area.
@@ -238,8 +238,8 @@ export default class MutableAreaDataSource extends AreaDataSource {
       draft.prevHistoryId = parent._change?.historyId
     })
 
-    const parentAncestors = parent.ancestors
-    const parentPathTokens = parent.pathTokens
+    const parentAncestors = parent.embeddedRelations.ancestors
+    const parentPathTokens = parent.embeddedRelations.pathTokens
     const parentGradeContext = parent.gradeContext
     const newArea = newAreaHelper(areaName, parentAncestors, parentPathTokens, parentGradeContext)
     if (isLeaf != null) {
@@ -262,7 +262,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
     const rs1 = await this.areaModel.insertMany(newArea, { session })
 
     // Make sure parent knows about this new area
-    parent.children.push(newArea._id)
+    parent.embeddedRelations.children.push(newArea._id)
     parent.updatedBy = experimentaAuthorId ?? user
     await parent.save({ timestamps: false })
     return rs1[0].toObject()
@@ -294,7 +294,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
       throw new Error('Delete area error.  Reason: area not found.')
     }
 
-    if (area?.children?.length > 0) {
+    if (area?.embeddedRelations.children?.length > 0) {
       throw new Error('Delete area error.  Reason: subareas not empty.')
     }
 
@@ -421,11 +421,11 @@ export default class MutableAreaDataSource extends AreaDataSource {
       area.set({ _change })
       area.updatedBy = experimentalAuthorId ?? user
 
-      if (area.pathTokens.length === 1) {
+      if (area.embeddedRelations.pathTokens.length === 1) {
         if (areaName != null || shortCode != null) throw new Error(`[${area.area_name}]: Area update error. Reason: Updating country name or short code is not allowed.`)
       }
 
-      if (area.children.length > 0 && (isLeaf != null || isBoulder != null)) {
+      if (area.embeddedRelations.children.length > 0 && (isLeaf != null || isBoulder != null)) {
         throw new Error(`[${area.area_name}]: Area update error.  Reason: Updating leaf or boulder status of an area with subareas is not allowed.`)
       }
 
@@ -495,12 +495,12 @@ export default class MutableAreaDataSource extends AreaDataSource {
    * @param depth tree depth
    */
   async updatePathTokens (session: ClientSession, changeRecord: ChangeRecordMetadataType, area: AreaDocumnent, newAreaName: string, changeIndex: number = -1): Promise<void> {
-    if (area.pathTokens.length > 1) {
+    if (area.embeddedRelations.pathTokens.length > 1) {
       if (changeIndex === -1) {
-        changeIndex = area.pathTokens.length - 1
+        changeIndex = area.embeddedRelations.pathTokens.length - 1
       }
 
-      const newPath = [...area.pathTokens]
+      const newPath = [...area.embeddedRelations.pathTokens]
       newPath[changeIndex] = newAreaName
       area.set({ pathTokens: newPath })
       area.set({ _change: changeRecord })
@@ -509,7 +509,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
       // hydrate children_ids array with actual area documents
       await area.populate('children')
 
-      await Promise.all(area.children.map(async childArea => {
+      await Promise.all(area.embeddedRelations.children.map(async childArea => {
         // TS complains about ObjectId type
         // Fix this when we upgrade Mongoose library
         // @ts-expect-error
@@ -585,12 +585,12 @@ export default class MutableAreaDataSource extends AreaDataSource {
      * Update function.  For each node, recalculate stats and recursively update its acenstors until we reach the country node.
      */
     const updateFn = async (session: ClientSession, changeRecord: ChangeRecordMetadataType, area: AreaDocumnent, childSummary?: StatsSummary): Promise<void> => {
-      if (area.pathTokens.length <= 1) {
+      if (area.embeddedRelations.pathTokens.length <= 1) {
         // we're at the root country node
         return
       }
 
-      const ancestors = area.ancestors.split(',')
+      const ancestors = area.embeddedRelations.ancestors.split(',')
       const parentUuid = muuid.from(ancestors[ancestors.length - 2])
       const parentArea =
         await this.areaModel.findOne({ 'metadata.area_id': parentUuid })
@@ -649,12 +649,12 @@ export const newAreaHelper = (areaName: string, parentAncestors: string, parentP
   })
 
   const ancestors = parentAncestors + ',' + uuid.toUUID().toString()
+
   return {
     _id,
     uuid,
     shortCode: '',
     area_name: areaName,
-    children: [],
     metadata: {
       isDestination: false,
       leaf: false,
@@ -664,9 +664,13 @@ export const newAreaHelper = (areaName: string, parentAncestors: string, parentP
       bbox: undefined,
       polygon: undefined
     },
-    ancestors,
     climbs: [],
-    pathTokens,
+    embeddedRelations: {
+      pathTokens,
+      ancestors,
+      children: [],
+      ancestorIndex: []
+    },
     gradeContext: parentGradeContext,
     aggregate: {
       byGrade: [],

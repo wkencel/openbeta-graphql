@@ -78,7 +78,6 @@ export const makeDBArea = (node: AreaNode): AreaType => {
     uuid,
     shortCode: '',
     area_name: areaName,
-    children: Array.from(children),
     metadata: {
       isDestination: false,
       leaf: isLeaf,
@@ -88,9 +87,13 @@ export const makeDBArea = (node: AreaNode): AreaType => {
       leftRightIndex: -1,
       ext_id: isLeaf ? extractMpId(node.jsonLine.url) : ''
     },
-    ancestors: uuidArrayToString(node.getAncestors()),
     climbs: [],
-    pathTokens: node.getPathTokens(),
+    embeddedRelations: {
+      children: Array.from(children),
+      pathTokens: node.getPathTokens(),
+      ancestors: uuidArrayToString(node.getAncestors()),
+      ancestorIndex: []
+    },
     gradeContext: node.getGradeContext(),
     aggregate: {
       byGrade: [],

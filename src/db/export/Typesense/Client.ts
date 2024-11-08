@@ -69,7 +69,7 @@ export const updateClimbIndex = async (climb: ClimbType | null, op: DBOperation)
     }
 
     // Look up additional attrs required by Climb index in Typesense.
-    const { pathTokens, ancestors } = await MutableAreaDataSource.getInstance().findOneAreaByUUID(climb.metadata.areaRef)
+    const { pathTokens, ancestors } = (await MutableAreaDataSource.getInstance().findOneAreaByUUID(climb.metadata.areaRef)).embeddedRelations
 
     const climbExt: ClimbExtType = {
       ...climb,

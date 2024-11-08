@@ -5,8 +5,6 @@ import muid, { MUUID } from 'uuid-mongodb'
 import { AreaType, OperationType } from "../../db/AreaTypes"
 import { ChangeRecordMetadataType } from "../../db/ChangeLogType"
 import { UserInputError } from "apollo-server-core"
-import mongoose from "mongoose"
-import exp from "constants"
 
 
 describe("Test area mutations", () => {
@@ -78,7 +76,7 @@ describe("Test area mutations", () => {
                 let child = await addArea('Child', { parent })
                 expect(child).toMatchObject({ area_name: 'Child' })
                 let parentCheck = await areas.findOneAreaByUUID(parent.metadata.area_id)
-                expect(parentCheck?.children ?? []).toContainEqual(child._id)
+                expect(parentCheck?.embeddedRelations.children ?? []).toContainEqual(child._id)
             }))
 
         test("Add a leaf area", () => addArea('Somewhere').then(parent => addArea('Child', { leaf: true, parent }))

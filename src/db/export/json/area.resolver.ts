@@ -6,8 +6,8 @@ export function resolveAreaFileName (area: Partial<AreaType>): string {
   if (name === undefined || name === '') { return 'unknown' } else { return name }
 }
 
-export function resolveAreaSubPath (area: Partial<AreaType>): string {
-  const paths: string[] = area.pathTokens?.map(normalizeName)
+export function resolveAreaSubPath (area: Partial<Omit<AreaType, 'embeddedRelations'> & { embeddedRelations: Partial<AreaType['embeddedRelations']> }>): string {
+  const paths: string[] = area?.embeddedRelations?.pathTokens?.map(normalizeName)
     .map(token => token ?? '')
     .filter(token => token !== '') ?? []
   return path.join(...paths)

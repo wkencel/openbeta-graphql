@@ -1,7 +1,7 @@
 import mongoose from 'mongoose'
 import muuid from 'uuid-mongodb'
 
-import { AreaType, IAreaContent, IAreaMetadata, AggregateType, CountByGroupType, CountByDisciplineType, CountByGradeBandType, DisciplineStatsType, OperationType } from './AreaTypes.js'
+import { AreaType, IAreaContent, IAreaMetadata, AggregateType, CountByGroupType, CountByDisciplineType, CountByGradeBandType, DisciplineStatsType, OperationType, AreaEmbeddedRelations } from './AreaTypes.js'
 import { PointSchema } from './ClimbSchema.js'
 import { ChangeRecordMetadataType } from './ChangeLogType.js'
 import { GradeContexts } from '../GradeUtils.js'
@@ -104,6 +104,37 @@ const AggregateSchema = new Schema<AggregateType>({
   byGradeBand: CountByGradeBandSchema
 }, { _id: false })
 
+/**
+ *
+ */
+const AreaEmbeddedRelationsSchema = new Schema<AreaEmbeddedRelations>({
+  /**
+   * All child area documents that are contained within this area.
+   * This has a strong relation to the areas collection, and contains only direct
+   * child areas - rather than all descendents.
+   *
+   * computed from the remote documents parent field
+   */
+  children: [{ type: Schema.Types.ObjectId, ref: 'areas', required: false, default: [], index: true }],
+  /**
+   * ancestors ids of this areas parents, traversing up the heirarchy to the root area.
+   * This is encoded as a string, but is really an array delimited by comma.
+   * @see https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-materialized-paths/
+   *
+   * computed from the remote documents parent field
+   */
+  ancestors: { type: String, required: true, index: true },
+  /**
+   * pathTokens names of this areas parents, traversing up the heirarchy to the root area
+   * with the current area being the last element.
+   */
+  pathTokens: [{ type: String, required: true, index: true }],
+  /**
+   * Rather than doing a graph lookup, the ancestry can be traced from here.
+   */
+  ancestorIndex: [{ type: Schema.Types.ObjectId, ref: 'areas', required: false, default: [], index: true }]
+}, { _id: false })
+
 export const AreaSchema = new Schema<AreaType>({
   area_name: { type: String, required: true, index: true },
   shortCode: { type: String, required: false, index: true },
@@ -112,9 +143,13 @@ export const AreaSchema = new Schema<AreaType>({
     ref: 'climbs',
     required: false
   }],
-  children: [{ type: Schema.Types.ObjectId, ref: 'areas', required: false }],
-  ancestors: { type: String, required: true, index: true },
-  pathTokens: [{ type: String, required: true, index: true }],
+  parent: {
+    type: mongoose.Types.ObjectId,
+    ref: 'areas',
+    index: true,
+    validate: async function () {}
+  },
+  embeddedRelations: AreaEmbeddedRelationsSchema,
   gradeContext: { type: String, enum: Object.values(GradeContexts), required: true },
   aggregate: AggregateSchema,
   metadata: MetadataSchema,
@@ -148,10 +183,6 @@ AreaSchema.index({
 AreaSchema.index({
   children: 1
 })
-
-export const createAreaModel = (name: string = 'areas'): mongoose.Model<AreaType> => {
-  return connection.model(name, AreaSchema)
-}
 
 export const getAreaModel = (name: string = 'areas'): mongoose.Model<AreaType> =>
   connection.model(name, AreaSchema)

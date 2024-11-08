@@ -45,14 +45,14 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
           case 'path_tokens': {
             const pathFilter = filter as PathTokenParams
             if (pathFilter.exactMatch === true) {
-              acc.pathTokens = pathFilter.tokens
+              acc.embeddedRelations.pathTokens = pathFilter.tokens
             } else {
               const filter: Record<string, any> = {}
               filter.$all = pathFilter.tokens
               if (pathFilter.size !== undefined) {
                 filter.$size = pathFilter.size
               }
-              acc.pathTokens = filter
+              acc.embeddedRelations.pathTokens = filter
             }
             break
           }

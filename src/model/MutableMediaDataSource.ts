@@ -25,7 +25,7 @@ export default class MutableMediaDataSource extends MediaDataSource {
           _id: new mongoose.Types.ObjectId(),
           targetId: entityUuid,
           type: entityType,
-          ancestors: climb.parent.ancestors,
+          ancestors: climb.parent.embeddedRelations.ancestors,
           climbName: climb.name,
           areaName: climb.parent.area_name,
           lnglat: climb.metadata.lnglat
@@ -47,7 +47,7 @@ export default class MutableMediaDataSource extends MediaDataSource {
           _id: new mongoose.Types.ObjectId(),
           targetId: entityUuid,
           type: entityType,
-          ancestors: area.ancestors,
+          ancestors: area.embeddedRelations.ancestors,
           areaName: area.area_name,
           lnglat: area.metadata.lnglat
         }

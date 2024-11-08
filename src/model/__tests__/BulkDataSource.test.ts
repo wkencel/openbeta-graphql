@@ -144,26 +144,26 @@ describe('bulk import e2e', () => {
         addedAreas: [
           {
             area_name: 'Test Area',
-            pathTokens: ['United States of America', 'Test Area'],
+            embeddedRelations: { pathTokens: ['United States of America', 'Test Area'] },
           },
           {
             area_name: 'Test Area 2',
-            pathTokens: [
+            embeddedRelations: {  pathTokens: [
               'United States of America',
               'Test Area',
               'Test Area 2',
-            ],
+            ] },
           },
           {
             area_name: 'Test Area 3',
-            pathTokens: [
+            embeddedRelations: { pathTokens: [
               'United States of America',
               'Test Area',
               'Test Area 2',
               'Test Area 3',
-            ],
+            ] },
           },
-        ] as Partial<AreaType>[],
+        ] satisfies Array<Partial<Omit<AreaType, 'embeddedRelations'> & { embeddedRelations: Partial<AreaType['embeddedRelations']> }>>,
       });
     });
 

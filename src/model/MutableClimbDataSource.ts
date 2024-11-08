@@ -78,7 +78,7 @@ export default class MutableClimbDataSource extends ClimbDataSource {
     parent.set({ _change })
 
     // does the parent area have subareas?
-    if (parent.children.length > 0) {
+    if (parent.embeddedRelations.children.length > 0) {
       throw new UserInputError('You can only add climbs to a crag or a bouldering area (an area that doesn\'t contain other areas)')
     }
 
