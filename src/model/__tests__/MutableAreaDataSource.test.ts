@@ -59,6 +59,9 @@ describe("Test area mutations", () => {
         test("Add a simple area with no specifications using a parent UUID", () => areas
             .addArea(testUser, 'Texas2', rootCountry.metadata.area_id)
             .then(area => {
+                expect(area).toMatchObject({
+                    parent: rootCountry._id,
+                })
                 expect(area?._change).toMatchObject({
                     user: testUser,
                     operation: OperationType.addArea,
@@ -69,6 +72,12 @@ describe("Test area mutations", () => {
                 async () => await expect(() => areas.addArea(testUser, 'Texas', muid.v4())).rejects.toThrow())
 
         test("Add a simple area with no specifications using a country code", () => areas.addArea(testUser, 'Texas part 2', null, 'USA')
+        .then(texas => {
+            expect(texas).toMatchObject({
+                parent: rootCountry._id,
+            })
+            return texas
+        })
             .then(texas => areas.addArea(testUser, 'Texas Child', texas.metadata.area_id)))
 
         test("Add a simple area, then specify a new child one level deep", () => addArea('California')
@@ -111,7 +120,7 @@ describe("Test area mutations", () => {
             }))
 
         test("Adding a child to a leaf area should cause it to become a normal area", () => addArea()
-            .then(parent => Promise.all(new Array(5).map(() => addArea('test', { leaf: true, parent } ))))
+            .then(parent => Promise.all(Array.from({ length: 5 }).map(() => addArea('test', { leaf: true, parent } ))))
             .then(([leaf]) => leaf)
             .then(leaf => addArea('test', { parent: leaf }))
             .then(leaf => expect(leaf).toMatchObject({ metadata: { leaf: false }})))
@@ -186,4 +195,45 @@ describe("Test area mutations", () => {
         await areas.updateArea(testUser, big.metadata.area_id, { areaName: "Still big ol bolder"})
         await addArea(nameShadow, { boulder: true, parent })
     }))
+
+    describe("updating of areas should propogate embeddedRelations", () => {
+        async function growTree(depth: number, bredth: number = 1): Promise<AreaType[]> {
+            const tree: AreaType[] = [rootCountry]
+
+            async function grow(from: AreaType, level: number = 0) {
+                if (level >= depth) return
+
+                await Promise.all(Array.from({ length: bredth })
+                    .map(() => addArea(undefined, { parent: from })
+                    .then(area => {
+                        tree.push(area)
+                        return grow(area, level + 1)
+                    })))
+            }
+
+            await grow(await addArea(undefined, { parent: rootCountry}))
+            return tree
+        }
+
+        test('computing ancestors from reified node', async () => growTree(5).then(async (tree) => {
+            // The 'tree' does not branch so it should be a straightforward line
+            expect(tree.length).toBe(6)
+
+            // This will validate that the flat tree structure flows from root at ordinal 0 to leaf
+            // at ordinal tree[-1]
+            // tree.reduce((previous, current) => {
+            //     expect(current.parent).toEqual(previous._id)
+            //     return current
+            // })
+
+            let computedAncestors = await areas.computeAncestorsFor(tree.at(-1)!._id)
+
+            expect(computedAncestors.length).toBe(tree.length)
+            // Similar to the previous validation step
+            computedAncestors.reduce((previous, current, idx) => {
+                expect(current.ancestor.parent).toEqual(previous.ancestor._id)
+                return current
+            })
+        }))
+    })
 })

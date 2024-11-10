@@ -13,6 +13,7 @@ import CountriesLngLat from '../data/countries-with-lnglat.json' assert {type: '
 import {
   AreaDocumnent,
   AreaEditableFieldsType,
+  AreaEmbeddedRelations,
   AreaType,
   OperationType,
   UpdateSortingOrderType
@@ -29,6 +30,7 @@ import { sanitizeStrict } from '../utils/sanitize.js'
 import AreaDataSource from './AreaDataSource.js'
 import { changelogDataSource } from './ChangeLogDataSource.js'
 import { withTransaction } from '../utils/helpers.js'
+import { arMA } from 'date-fns/locale'
 
 isoCountries.registerLocale(enJson)
 
@@ -63,12 +65,13 @@ export default class MutableAreaDataSource extends AreaDataSource {
     let neighbours: string[]
 
     if (parent !== null) {
-      neighbours = (await this.areaModel.find({ _id: parent.embeddedRelations.children })).map(i => i.area_name)
+      neighbours = (await this.areaModel.find({ parent: parent._id })).map(i => i.area_name)
     } else {
-      neighbours = (await this.areaModel.find({ pathTokens: { $size: 1 } })).map(i => i.area_name)
+      // locate nodes with no direct parent (roots)
+      neighbours = (await this.areaModel.find({ parent: { $exists: false } })).map(i => i.area_name)
     }
 
-    neighbours = neighbours.map(i => this.areaNameCompare(i))
+    neighbours = neighbours.map(neighbour => this.areaNameCompare(neighbour))
     if (neighbours.includes(this.areaNameCompare(areaName))) {
       throw new UserInputError(`[${areaName}]: This name already exists for some other area in this parent`)
     }
@@ -238,10 +241,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
       draft.prevHistoryId = parent._change?.historyId
     })
 
-    const parentAncestors = parent.embeddedRelations.ancestors
-    const parentPathTokens = parent.embeddedRelations.pathTokens
-    const parentGradeContext = parent.gradeContext
-    const newArea = newAreaHelper(areaName, parentAncestors, parentPathTokens, parentGradeContext)
+    const newArea = newAreaHelper(areaName, parent)
     if (isLeaf != null) {
       newArea.metadata.leaf = isLeaf
     }
@@ -263,7 +263,6 @@ export default class MutableAreaDataSource extends AreaDataSource {
 
     // Make sure parent knows about this new area
     parent.embeddedRelations.children.push(newArea._id)
-    parent.updatedBy = experimentaAuthorId ?? user
     await parent.save({ timestamps: false })
     return rs1[0].toObject()
   }
@@ -311,13 +310,13 @@ export default class MutableAreaDataSource extends AreaDataSource {
       seq: 0
     }
     // Remove this area id from the parent.children[]
-    await this.areaModel.updateOne(
+    await this.areaModel.updateMany(
       {
-        children: area._id
+        'embeddedRelations.children': area._id
       },
       [{
         $set: {
-          children: {
+          'embeddedRelations.children': {
             $filter: {
               input: '$children',
               as: 'child',
@@ -434,7 +433,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
         area.set({ area_name: sanitizedName })
 
         // change our pathTokens
-        await this.updatePathTokens(session, _change, area, sanitizedName)
+        await this.computeEmbeddedAncestors(area)
       }
 
       if (shortCode != null) area.set({ shortCode: shortCode.toUpperCase() })
@@ -486,36 +485,73 @@ export default class MutableAreaDataSource extends AreaDataSource {
     }
   }
 
-  /**
-   * Update path tokens
-   * @param session Mongoose session
-   * @param changeRecord Changeset metadata
-   * @param area area to update
-   * @param newAreaName new area name
-   * @param depth tree depth
-   */
-  async updatePathTokens (session: ClientSession, changeRecord: ChangeRecordMetadataType, area: AreaDocumnent, newAreaName: string, changeIndex: number = -1): Promise<void> {
-    if (area.embeddedRelations.pathTokens.length > 1) {
-      if (changeIndex === -1) {
-        changeIndex = area.embeddedRelations.pathTokens.length - 1
-      }
-
-      const newPath = [...area.embeddedRelations.pathTokens]
-      newPath[changeIndex] = newAreaName
-      area.set({ pathTokens: newPath })
-      area.set({ _change: changeRecord })
-      await area.save({ session })
-
-      // hydrate children_ids array with actual area documents
-      await area.populate('children')
-
-      await Promise.all(area.embeddedRelations.children.map(async childArea => {
-        // TS complains about ObjectId type
-        // Fix this when we upgrade Mongoose library
-        // @ts-expect-error
-        await this.updatePathTokens(session, changeRecord, childArea, newAreaName, changeIndex)
-      }))
+  async passEmbeddedToChildren (_id: mongoose.Types.ObjectId, embeddedRelations?: AreaEmbeddedRelations, tree?: AreaType[]): Promise<AreaType[]> {
+    if (tree === undefined) {
+      tree = []
     }
+
+    const area: Pick<AreaType, 'embeddedRelations'> | null = await this.areaModel.findOne({ _id }, { embeddedRelations: 1, area_name: 1, 'metadata.area_id': 1 })
+    if (area === null) {
+      logger.error('Programming error: A bad ID was passed from parent - a child is missing.')
+      return []
+    }
+
+    await Promise.all(area.embeddedRelations.children.map(async child => {
+      const ctx = { ...(embeddedRelations ?? area.embeddedRelations) }
+      ctx.ancestorIndex.push()
+      return await this.passEmbeddedToChildren(child, ctx)
+    }))
+
+    return tree
+  }
+
+  async computeAncestorsFor (_id: mongoose.Types.ObjectId): Promise<Array<{ ancestor: AreaType }>> {
+    return await this.areaModel.aggregate([
+      { $match: { _id } },
+      {
+        $graphLookup: {
+          from: this.areaModel.collection.name,
+          startWith: '$parent',
+          // connect parent -> _id to trace up the tree
+          connectFromField: 'parent',
+          connectToField: '_id',
+          as: 'ancestor',
+          depthField: 'level'
+        }
+      },
+      {
+        $unwind: '$ancestor'
+      },
+      {
+        $project: {
+          _id: 0,
+          ancestor: 1
+        }
+      },
+      { $sort: { 'ancestor.level': -1 } }
+    ])
+  }
+
+  /**
+   * When an area changes its parent it needs to have its children recieve the new derived data.
+   * There is a challenge here in that sharding the gql server may produce side-effects.
+   */
+  async computeEmbeddedAncestors (area: AreaType): Promise<void> {
+    await Promise.all([
+      // ensure the parent has a reference to this area
+      this.areaModel.updateOne({ _id: area.parent }, { $addToSet: { 'embeddedRelations.children': area._id } }),
+      // ensure there are no divorced references to this area
+      this.areaModel.updateMany(
+        { _id: { $ne: area.parent }, 'embeddedRelations.children': area._id },
+        { $pull: { 'embeddedRelations.children': area._id } }
+      ),
+      // We now compute the ancestors for this node
+      this.computeAncestorsFor(area._id).then(ancestors => {
+      })
+    ])
+
+    // With all previous steps resolved we can pass the embedded data here to the children.
+    await Promise.all(area.embeddedRelations.children.map(async (child) => await this.passEmbeddedToChildren(child)))
   }
 
   /**
@@ -640,19 +676,14 @@ export default class MutableAreaDataSource extends AreaDataSource {
   }
 }
 
-export const newAreaHelper = (areaName: string, parentAncestors: string, parentPathTokens: string[], parentGradeContext: GradeContexts): AreaType => {
+export const newAreaHelper = (areaName: string, parent: AreaType): AreaType => {
   const _id = new mongoose.Types.ObjectId()
   const uuid = muuid.v4()
-
-  const pathTokens = produce(parentPathTokens, draft => {
-    draft.push(areaName)
-  })
-
-  const ancestors = parentAncestors + ',' + uuid.toUUID().toString()
 
   return {
     _id,
     uuid,
+    parent: parent._id,
     shortCode: '',
     area_name: areaName,
     metadata: {
@@ -660,18 +691,16 @@ export const newAreaHelper = (areaName: string, parentAncestors: string, parentP
       leaf: false,
       area_id: uuid,
       leftRightIndex: -1,
-      ext_id: '',
-      bbox: undefined,
-      polygon: undefined
+      ext_id: ''
     },
     climbs: [],
     embeddedRelations: {
-      pathTokens,
-      ancestors,
       children: [],
-      ancestorIndex: []
+      ancestors: parent.embeddedRelations.ancestors + `,${uuid}`,
+      pathTokens: [...parent.embeddedRelations.pathTokens, areaName],
+      ancestorIndex: [...parent.embeddedRelations.ancestorIndex, _id]
     },
-    gradeContext: parentGradeContext,
+    gradeContext: parent.gradeContext,
     aggregate: {
       byGrade: [],
       byDiscipline: {},
