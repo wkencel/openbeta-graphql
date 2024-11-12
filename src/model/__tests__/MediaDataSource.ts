@@ -132,7 +132,7 @@ describe('MediaDataSource', () => {
       targetId: climbTag.entityUuid,
       type: climbTag.entityType,
       areaName: areaForTagging1.area_name,
-      ancestors: areaForTagging1.embeddedRelations.ancestors,
+      ancestors: areaForTagging1.embeddedRelations.ancestors.map(i => i.uuid).join(","),
       climbName: newSportClimb1.name,
       lnglat: areaForTagging1.metadata.lnglat
     })

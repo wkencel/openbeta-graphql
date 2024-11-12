@@ -108,6 +108,26 @@ export interface IAreaProps extends AuthorMetadata {
   _deleting?: Date
 }
 
+export interface DenormalizedAreaSummary {
+  /**
+   * ancestors ids of this areas parents, traversing up the heirarchy to the root area.
+   * This is encoded as a string, but is really an array delimited by comma.
+   * @see https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-materialized-paths/
+   *
+   * computed from the remote documents parent field
+   */
+  uuid: MUUID
+  /**
+    * Trace ancestors back to root, can be used as an index rather than computing it
+    */
+  _id: mongoose.Types.ObjectId
+  /**
+  * pathTokens names of this areas parents, traversing up the heirarchy to the root area
+  * with the current area being the last element.
+  */
+  name: string
+}
+
 export interface AreaEmbeddedRelations {
   /**
    * All child area documents that are contained within this area.
@@ -117,23 +137,7 @@ export interface AreaEmbeddedRelations {
    * computed from the remote documents parent field
    */
   children: mongoose.Types.ObjectId[]
-  /**
-   * ancestors ids of this areas parents, traversing up the heirarchy to the root area.
-   * This is encoded as a string, but is really an array delimited by comma.
-   * @see https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-materialized-paths/
-   *
-   * computed from the remote documents parent field
-   */
-  ancestors: string
-  /**
-   * Trace ancestors back to root, can be used as an index rather than computing
-  */
-  ancestorIndex: mongoose.Types.ObjectId[]
-  /**
-   * pathTokens names of this areas parents, traversing up the heirarchy to the root area
-   * with the current area being the last element.
-   */
-  pathTokens: string[]
+  ancestors: DenormalizedAreaSummary[]
 }
 
 export interface IAreaMetadata {

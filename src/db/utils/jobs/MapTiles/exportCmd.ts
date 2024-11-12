@@ -23,6 +23,7 @@ import { logger } from '../../../../logger.js'
 import { ClimbType } from '../../../ClimbTypes.js'
 import MutableMediaDataSource from '../../../../model/MutableMediaDataSource.js'
 import { workingDir } from './init.js'
+import { muuidToString } from '../../../../utils/helpers.js'
 
 const MEDIA_PROJECTION = {
   width: 1,
@@ -73,9 +74,10 @@ async function exportLeafCrags (): Promise<void> {
       totalClimbs
     } = doc
 
-    const { pathTokens, ancestors } = doc.embeddedRelations
+    const { ancestors } = doc.embeddedRelations
+    const ancestorArray = ancestors.map(i => muuidToString(i.uuid))
+    const pathTokens = ancestors.map(i => i.name)
 
-    const ancestorArray = ancestors.split(',')
     const pointFeature = point(
       doc.metadata.lnglat.coordinates,
       {

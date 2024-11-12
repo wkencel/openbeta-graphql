@@ -270,7 +270,7 @@ const resolvers = {
 
     organizations: async (node: AreaType, args: any, { dataSources }: Context) => {
       const { organizations } = dataSources
-      const areaIdsToSearch = [node.metadata.area_id, ...node.embeddedRelations.ancestors.split(',').map(s => muid.from(s))]
+      const areaIdsToSearch = [node.metadata.area_id, ...node.embeddedRelations.ancestors.map(i => i.uuid)]
       const associatedOrgsCursor = await organizations.findOrganizationsByFilter({
         associatedAreaIds: { includes: areaIdsToSearch },
         // Remove organizations that explicitly request not to be associated with this area.

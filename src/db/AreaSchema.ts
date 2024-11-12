@@ -104,6 +104,22 @@ const AggregateSchema = new Schema<AggregateType>({
   byGradeBand: CountByGradeBandSchema
 }, { _id: false })
 
+const AreaEmbeddedRelationsAncestor = new Schema({
+  _id: {
+    type: mongoose.Types.ObjectId,
+    required: true,
+    index: true,
+    ref: 'areas'
+  },
+  name: { type: String, required: true, index: true },
+  uuid: {
+    type: 'object',
+    value: { type: 'Buffer' },
+    required: true,
+    index: true
+  }
+}, { _id: false })
+
 export const AreaEmbeddedRelationsSchema = new Schema<AreaEmbeddedRelations>({
   /**
    * All child area documents that are contained within this area.
@@ -115,27 +131,14 @@ export const AreaEmbeddedRelationsSchema = new Schema<AreaEmbeddedRelations>({
   children: [{
     type: Schema.Types.ObjectId,
     ref: 'areas',
-    required: false,
-    default: [],
     index: true
   }],
+
   /**
    * ancestors ids of this areas parents, traversing up the heirarchy to the root area.
-   * This is encoded as a string, but is really an array delimited by comma.
-   * @see https://www.mongodb.com/docs/manual/tutorial/model-tree-structures-with-materialized-paths/
-   *
-   * computed from the remote documents parent field
+   * computed from the remote documents <parent> field
    */
-  ancestors: { type: String, required: true, index: true },
-  /**
-   * pathTokens names of this areas parents, traversing up the heirarchy to the root area
-   * with the current area being the last element.
-   */
-  pathTokens: [{ type: String, required: true, index: true }],
-  /**
-   * Rather than doing a graph lookup, the ancestry can be traced from here.
-   */
-  ancestorIndex: [{ type: Schema.Types.ObjectId, ref: 'areas', required: false, default: [], index: true }]
+  ancestors: [{ type: AreaEmbeddedRelationsAncestor, required: true }]
 }, { _id: false })
 
 export const AreaSchema = new Schema<AreaType>({

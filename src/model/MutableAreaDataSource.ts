@@ -12,15 +12,12 @@ import CountriesLngLat from '../data/countries-with-lnglat.json' assert {type: '
 import {
   AreaDocumnent,
   AreaEditableFieldsType,
-  AreaEmbeddedRelations,
   AreaType,
   OperationType,
   UpdateSortingOrderType
 } from '../db/AreaTypes.js'
 import { ChangeRecordMetadataType } from '../db/ChangeLogType.js'
 import { ExperimentalAuthorType } from '../db/UserTypes.js'
-import { makeDBArea } from '../db/import/usa/AreaTransformer.js'
-import { createRootNode } from '../db/import/usa/AreaTree.js'
 import { leafReducer, nodesReducer, StatsSummary } from '../db/utils/jobs/TreeUpdaters/updateAllAreas.js'
 import { bboxFrom } from '../geo-utils.js'
 import { logger } from '../logger.js'
@@ -28,7 +25,9 @@ import { createInstance as createExperimentalUserDataSource } from '../model/Exp
 import { sanitizeStrict } from '../utils/sanitize.js'
 import AreaDataSource from './AreaDataSource.js'
 import { changelogDataSource } from './ChangeLogDataSource.js'
-import { muuidToString, withTransaction } from '../utils/helpers.js'
+import { withTransaction } from '../utils/helpers.js'
+import { AreaRelationsEmbeddings } from './AreaRelationsEmbeddings'
+import { GradeContexts } from '../GradeUtils'
 
 isoCountries.registerLocale(enJson)
 
@@ -50,8 +49,39 @@ export interface UpdateAreaOptions {
   session?: ClientSession
 }
 
+const defaultArea = {
+  shortCode: '',
+  metadata: {
+    isDestination: false,
+    leaf: false,
+    leftRightIndex: -1,
+    ext_id: ''
+  },
+  climbs: [],
+  embeddedRelations: {
+    children: []
+  },
+  aggregate: {
+    byGrade: [],
+    byDiscipline: {},
+    byGradeBand: {
+      unknown: 0,
+      beginner: 0,
+      intermediate: 0,
+      advanced: 0,
+      expert: 0
+    }
+  },
+  density: 0,
+  totalClimbs: 0,
+  content: {
+    description: ''
+  }
+}
+
 export default class MutableAreaDataSource extends AreaDataSource {
   experimentalUserDataSource = createExperimentalUserDataSource()
+  relations = new AreaRelationsEmbeddings(this.areaModel)
 
   private areaNameCompare (name: string): string {
     return name.trim().toLocaleLowerCase().split(' ').filter(i => i !== '').join(' ')
@@ -127,16 +157,30 @@ export default class MutableAreaDataSource extends AreaDataSource {
     // Country code can be either alpha2 or 3. Let's convert it to alpha3.
     const alpha3 = countryCode.length === 2 ? isoCountries.toAlpha3(countryCode) : countryCode
     const countryName = isoCountries.getName(countryCode, 'en')
-    const countryNode = createRootNode(alpha3, countryName)
-
-    // Build the Mongo document to be inserted
-    const doc = makeDBArea(countryNode)
-    doc.shortCode = alpha3
+    const _id = new mongoose.Types.ObjectId()
+    const uuid = countryCode2Uuid(countryCode)
+    const country: AreaType = {
+      area_name: countryName,
+      ...defaultArea,
+      embeddedRelations: {
+        ...defaultArea.embeddedRelations,
+        ancestors: [{ _id, uuid, name: countryName }]
+      },
+      metadata: {
+        ...defaultArea.metadata,
+        lnglat: CountriesLngLat[alpha3]?.lnglat,
+        area_id: uuid
+      },
+      _id,
+      uuid,
+      gradeContext: GradeContexts.US
+    }
 
     // Look up the country lat,lng
     const entry = CountriesLngLat[alpha3]
+
     if (entry != null) {
-      doc.metadata.lnglat = {
+      country.metadata.lnglat = {
         type: 'Point',
         coordinates: entry.lnglat
       }
@@ -147,7 +191,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
 
     await this.validateUniqueAreaName(countryName, null)
 
-    const rs = await this.areaModel.insertMany(doc)
+    const rs = await this.areaModel.insertMany(country)
     if (rs.length === 1) {
       return await rs[0].toObject()
     }
@@ -243,7 +287,8 @@ export default class MutableAreaDataSource extends AreaDataSource {
       draft.prevHistoryId = parent._change?.historyId
     })
 
-    const newArea = newAreaHelper(areaName, parent)
+    const newArea = this.subAreaHelper(areaName, parent)
+
     if (isLeaf != null) {
       newArea.metadata.leaf = isLeaf
     }
@@ -412,7 +457,8 @@ export default class MutableAreaDataSource extends AreaDataSource {
       area.set({ _change })
       area.updatedBy = experimentalAuthorId ?? user
 
-      if (area.embeddedRelations.pathTokens.length === 1) {
+      // If this is a root area we disallow typical editing of it, as it is likely a country.
+      if (area.parent === undefined) {
         if (areaName != null || shortCode != null) throw new Error(`[${area.area_name}]: Area update error. Reason: Updating country name or short code is not allowed.`)
       }
 
@@ -423,7 +469,8 @@ export default class MutableAreaDataSource extends AreaDataSource {
       if (areaName != null) {
         const sanitizedName = sanitizeStrict(areaName)
         area.set({ area_name: sanitizedName })
-        await this.computeEmbeddedAncestors(area)
+        // sync names in all relevant references to this area.
+        await this.relations.syncNamesInEmbeddings(area)
       }
 
       if (shortCode != null) area.set({ shortCode: shortCode.toUpperCase() })
@@ -473,75 +520,6 @@ export default class MutableAreaDataSource extends AreaDataSource {
         await session.endSession()
       }
     }
-  }
-
-  async passEmbeddedToChildren (_id: mongoose.Types.ObjectId, embeddedRelations?: AreaEmbeddedRelations, tree?: AreaType[]): Promise<AreaType[]> {
-    if (tree === undefined) {
-      tree = []
-    }
-
-    const area: Pick<AreaType, 'embeddedRelations'> | null = await this.areaModel.findOne({ _id }, { embeddedRelations: 1, area_name: 1, 'metadata.area_id': 1 })
-    if (area === null) {
-      logger.error('Programming error: A bad ID was passed from parent - a child is missing.')
-      return []
-    }
-
-    await Promise.all(area.embeddedRelations.children.map(async child => {
-      const ctx = { ...(embeddedRelations ?? area.embeddedRelations) }
-      ctx.ancestorIndex.push()
-      return await this.passEmbeddedToChildren(child, ctx)
-    }))
-
-    return tree
-  }
-
-  async computeAncestorsFor (_id: mongoose.Types.ObjectId): Promise<Array<{ ancestor: AreaType }>> {
-    return await this.areaModel.aggregate([
-      { $match: { _id } },
-      {
-        $graphLookup: {
-          from: this.areaModel.collection.name,
-          startWith: '$parent',
-          // connect parent -> _id to trace up the tree
-          connectFromField: 'parent',
-          connectToField: '_id',
-          as: 'ancestor',
-          depthField: 'level'
-        }
-      },
-      {
-        $unwind: '$ancestor'
-      },
-      {
-        $project: {
-          _id: 0,
-          ancestor: 1
-        }
-      },
-      { $sort: { 'ancestor.level': -1 } }
-    ])
-  }
-
-  /**
-   * When an area changes its parent it needs to have its children recieve the new derived data.
-   * There is a challenge here in that sharding the gql server may produce side-effects.
-   */
-  async computeEmbeddedAncestors (area: AreaType): Promise<void> {
-    await Promise.all([
-      // ensure the parent has a reference to this area
-      this.areaModel.updateOne({ _id: area.parent }, { $addToSet: { 'embeddedRelations.children': area._id } }),
-      // ensure there are no divorced references to this area
-      this.areaModel.updateMany(
-        { _id: { $ne: area.parent }, 'embeddedRelations.children': area._id },
-        { $pull: { 'embeddedRelations.children': area._id } }
-      ),
-      // We now compute the ancestors for this node
-      this.computeAncestorsFor(area._id).then(ancestors => {
-      })
-    ])
-
-    // With all previous steps resolved we can pass the embedded data here to the children.
-    await Promise.all(area.embeddedRelations.children.map(async (child) => await this.passEmbeddedToChildren(child)))
   }
 
   /**
@@ -599,6 +577,36 @@ export default class MutableAreaDataSource extends AreaDataSource {
     return ret
   }
 
+  private subAreaHelper (areaName: string, parent: AreaType): AreaType {
+    const _id = new mongoose.Types.ObjectId()
+    const uuid = muuid.v4()
+
+    return {
+      ...defaultArea,
+      _id,
+      uuid,
+      parent: parent._id,
+      area_name: areaName,
+      gradeContext: parent.gradeContext,
+      metadata: {
+        ...defaultArea.metadata,
+        area_id: uuid
+      },
+      embeddedRelations: {
+        ...defaultArea.embeddedRelations,
+        // Initialize the ancestors by extending the parent's denormalized data
+        ancestors: [
+          ...parent.embeddedRelations.ancestors,
+          {
+            _id,
+            uuid,
+            name: areaName
+          }
+        ]
+      }
+    } satisfies AreaType
+  }
+
   /**
    * Update area stats and geo data for a given leaf node and its ancestors.
    * @param session
@@ -611,15 +619,13 @@ export default class MutableAreaDataSource extends AreaDataSource {
      * Update function.  For each node, recalculate stats and recursively update its acenstors until we reach the country node.
      */
     const updateFn = async (session: ClientSession, changeRecord: ChangeRecordMetadataType, area: AreaDocumnent, childSummary?: StatsSummary): Promise<void> => {
-      if (area.embeddedRelations.pathTokens.length <= 1) {
+      if (area.parent === undefined) {
         // we're at the root country node
         return
       }
 
-      const ancestors = area.embeddedRelations.ancestors.split(',')
-      const parentUuid = muuid.from(ancestors[ancestors.length - 2])
       const parentArea =
-        await this.areaModel.findOne({ 'metadata.area_id': parentUuid })
+        await this.areaModel.findOne({ _id: area.parent })
           .batchSize(10)
           .populate<{ embeddedRelations: { children: AreaDocumnent[] } }>({
           path: 'embeddedRelations.children',
@@ -630,11 +636,6 @@ export default class MutableAreaDataSource extends AreaDataSource {
           .orFail()
 
       const acc: StatsSummary[] = []
-
-      if (parentArea.embeddedRelations.children === null) {
-        console.log(await this.areaModel.findOne({ 'metadata.area_id': parentUuid }))
-        throw new Error('Oopie doopers')
-      }
 
       /**
        * Collect existing stats from all children. For affected node, use the stats from previous calculation.
@@ -672,52 +673,6 @@ export default class MutableAreaDataSource extends AreaDataSource {
       MutableAreaDataSource.instance = new MutableAreaDataSource(mongoose.connection.db.collection('areas'))
     }
     return MutableAreaDataSource.instance
-  }
-}
-
-export const newAreaHelper = (areaName: string, parent: AreaType): AreaType => {
-  const _id = new mongoose.Types.ObjectId()
-  const uuid = muuid.v4()
-
-  return {
-    _id,
-    uuid,
-    parent: parent._id,
-    shortCode: '',
-    area_name: areaName,
-    metadata: {
-      isDestination: false,
-      leaf: false,
-      area_id: uuid,
-      leftRightIndex: -1,
-      ext_id: ''
-    },
-    climbs: [],
-    embeddedRelations: {
-      children: [],
-      // ancestors and pathTokens terminate at the present node, while the ancestorIndex
-      // terminates at the parent.
-      ancestors: parent.embeddedRelations.ancestors + `,${muuidToString(uuid)}`,
-      pathTokens: [...parent.embeddedRelations.pathTokens, areaName],
-      ancestorIndex: [...parent.embeddedRelations.ancestorIndex, parent._id]
-    },
-    gradeContext: parent.gradeContext,
-    aggregate: {
-      byGrade: [],
-      byDiscipline: {},
-      byGradeBand: {
-        unknown: 0,
-        beginner: 0,
-        intermediate: 0,
-        advanced: 0,
-        expert: 0
-      }
-    },
-    density: 0,
-    totalClimbs: 0,
-    content: {
-      description: ''
-    }
   }
 }
 

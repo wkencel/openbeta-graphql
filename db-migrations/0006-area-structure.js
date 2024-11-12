@@ -46,39 +46,30 @@ db.areas.find().forEach((doc) => {
     {
       $group: {
         _id: "$_id",
-        pathTokens: { $push: "$ancestorPath.area_name" },
-        ancestors: { $push: "$ancestorPath.metadata.area_id" },
-        ancestorIndex: { $push: "$ancestorPath._id" },
+        ancestors: { $push: '$ancestorPath' }
       },
     },
   ]).toArray();
 
-  const pathTokens = [...(pathDocs[0]?.pathTokens ?? []), doc.area_name];
-  const ancestors = [
-    ...(pathDocs[0]?.ancestors ?? []),
-    doc.metadata.area_id,
-  ].join(",");
-  const ancestorIndex = pathDocs[0]?.ancestorIndex ?? [];
-
   const embeddedRelations = {
     children: childrenMap[doc._id] || [],
-    pathTokens,
-    ancestors,
-    ancestorIndex,
+    // map out the ancestors of this doc (terminating at the current node for backward-compat reasons)
+    // We take out the relevant data we would like to be denormalized.
+    ancestors: [...(pathDocs[0]?.ancestors ?? []), doc].map(i => ({
+      _id: i._id,
+      name: i.area_name,
+      uuid: i.metadata.area_id
+    }))
   };
 
-  if (pathTokens.join(",") !== doc.pathTokens.join(",")) {
-    throw `Path tokens did not match (${pathTokens} != ${doc.pathTokens})`;
+  if (embeddedRelations.ancestors.map(i => i.name).join(",") !== doc.pathTokens.join(",")) {
+    throw `Path tokens did not match (${embeddedRelations.ancestors.map(i => i.name)} != ${doc.pathTokens})`;
   }
 
-  if (ancestors !== doc.ancestors) {
-    throw `Path tokens did not match (${ancestors} != ${doc.ancestors})`;
+  if (embeddedRelations.ancestors.map(i => i.uuid).join(',') !== doc.ancestors) {
+    throw `Ancestors did not match (${embeddedRelations.ancestors.map(i => i.uuid)} != ${doc.ancestors})`;
   }
 
-  if (ancestorIndex.length !== pathTokens.length - 1) {
-    print({ ancestorIndex, pathTokens });
-    throw "ancestorIndex is the wrong shape";
-  }
 
   // Use bulkWrite for efficient updates
   db.areas.updateOne(
@@ -93,3 +84,14 @@ print("Removing old fields.");
 db.areas.updateMany({}, {
   $unset: { children: "", pathTokens: "", ancestors: "" },
 });
+
+printjson(db.areas.createIndex({ parent: 1 }))
+printjson(db.areas.createIndex({ 'embeddedRelations.children': 1 }))
+printjson(db.areas.createIndex({ 'embeddedRelations.ancestors._id': 1 }))
+printjson(db.areas.createIndex({ 'embeddedRelations.ancestors.uuid': 1 }))
+printjson(db.areas.createIndex({ 'embeddedRelations.ancestors.name': 1 }))
+
+//  https://www.mongodb.com/docs/v6.2/reference/method/db.collection.createIndex/#create-an-index-on-a-multiple-fields
+//  > The order of fields in a compound index is important for supporting sort() operations using the index.
+// It is not clear to me if there is a $lookup speed implication based on the direction of the join.
+printjson(db.areas.createIndex({ parent: 1, _id: 1 }))

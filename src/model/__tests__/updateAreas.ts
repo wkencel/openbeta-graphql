@@ -6,6 +6,7 @@ import MutableClimbDataSource from '../MutableClimbDataSource.js'
 import { createIndexes, getAreaModel, getClimbModel } from '../../db/index.js'
 import { AreaEditableFieldsType, UpdateSortingOrderType } from '../../db/AreaTypes.js'
 import inMemoryDB from '../../utils/inMemoryDB.js'
+import { muuidToString } from '../../utils/helpers.js'
 
 describe('Areas', () => {
   let areas: MutableAreaDataSource
@@ -70,9 +71,10 @@ describe('Areas', () => {
 
     // Verify paths and ancestors
     if (theBug != null) { // make TS happy
-      expect(theBug.embeddedRelations.ancestors)
+      expect(theBug.embeddedRelations.ancestors.map(i => muuidToString(i.uuid)).join(','))
         .toEqual(`${canada.metadata.area_id.toUUID().toString()},${theBug?.metadata.area_id.toUUID().toString()}`)
-      expect(theBug.embeddedRelations.pathTokens)
+
+      expect(theBug.embeddedRelations.ancestors.map(i => i.name))
         .toEqual([canada.area_name, theBug.area_name])
     }
   })

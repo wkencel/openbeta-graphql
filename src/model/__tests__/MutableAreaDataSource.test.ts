@@ -195,46 +195,4 @@ describe("Test area mutations", () => {
         await addArea(nameShadow, { boulder: true, parent })
     }))
 
-    describe("updating of areas should propogate embeddedRelations", () => {
-        const defaultDepth = 5
-        async function growTree(depth: number = defaultDepth, bredth: number = 1): Promise<AreaType[]> {
-            const tree: AreaType[] = [rootCountry, await addArea()]
-
-            async function grow(from: AreaType, level: number = 0) {
-                if (level >= depth) return
-
-                await Promise.all(Array.from({ length: bredth })
-                    .map((_ ,idx) => addArea(`${level}-${idx}`, { parent: from })
-                    .then(area => {
-                        if (!area.parent?.equals(from._id)) {
-                            throw new Error(`${area.parent} should have been ${from._id}`)
-                        }
-                        tree.push(area)
-                        return grow(area, level + 1)
-                    })))
-            }
-
-            await grow(tree.at(-1)!)
-
-            return tree
-        }
-
-        test('computing ancestors from reified node', async () => growTree().then(async (tree) => {
-            let computedAncestors = await areas.computeAncestorsFor(tree.at(-1)!._id)
-
-            // Check that each node refers specifically to the previous one as its parent
-            // - this will check that the areas are in order and that no nodes are skipped.
-            computedAncestors.reduce((previous, current, idx) => {
-                expect(current.ancestor.parent?.equals(previous.ancestor._id))
-                expect(current.ancestor._id.equals(tree[idx]._id))
-                return current
-            })
-        }))
-
-        test('ancestors should be computed on area add.', async () => growTree(5).then(async (tree) => {
-            let leaf = tree.at(-1)!
-            expect(leaf.embeddedRelations.pathTokens.join(',')).toEqual(tree.map(i => i.area_name).join(','))
-            expect(leaf.embeddedRelations.ancestors).toEqual(tree.map(i => i.metadata.area_id).join(','))
-        }))
-    })
 })

@@ -5,6 +5,7 @@ import muuid from 'uuid-mongodb'
 import MediaDataSource from './MediaDataSource.js'
 import { EntityTag, EntityTagDeleteInput, MediaObject, MediaObjectGQLInput, AddTagEntityInput, NewMediaObjectDoc } from '../db/MediaObjectTypes.js'
 import MutableAreaDataSource from './MutableAreaDataSource.js'
+import { muuidToString } from '../utils/helpers.js'
 
 export default class MutableMediaDataSource extends MediaDataSource {
   areaDS = MutableAreaDataSource.getInstance()
@@ -25,7 +26,7 @@ export default class MutableMediaDataSource extends MediaDataSource {
           _id: new mongoose.Types.ObjectId(),
           targetId: entityUuid,
           type: entityType,
-          ancestors: climb.parent.embeddedRelations.ancestors,
+          ancestors: climb.parent.embeddedRelations.ancestors.map(i => muuidToString(i.uuid)).join(','),
           climbName: climb.name,
           areaName: climb.parent.area_name,
           lnglat: climb.metadata.lnglat
@@ -47,7 +48,7 @@ export default class MutableMediaDataSource extends MediaDataSource {
           _id: new mongoose.Types.ObjectId(),
           targetId: entityUuid,
           type: entityType,
-          ancestors: area.embeddedRelations.ancestors,
+          ancestors: area.embeddedRelations.ancestors.map(i => i.uuid).join(','),
           areaName: area.area_name,
           lnglat: area.metadata.lnglat
         }
