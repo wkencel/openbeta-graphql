@@ -55,7 +55,13 @@ export async function createServer (): Promise<{ app: express.Application, serve
   })
   // server must be started before applying middleware
   await server.start()
-  server.applyMiddleware({ app, path: '/' })
+  server.applyMiddleware({
+    app,
+    path: '/',
+    bodyParserConfig: {
+      limit: '10mb'
+    }
+  })
 
   return { app, server }
 }
