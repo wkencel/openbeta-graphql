@@ -6,7 +6,6 @@ import { AreaType, OperationType } from "../../db/AreaTypes"
 import { ChangeRecordMetadataType } from "../../db/ChangeLogType"
 import { UserInputError } from "apollo-server-core"
 
-
 describe("Test area mutations", () => {
     let areas: MutableAreaDataSource
     let rootCountry: AreaType
@@ -50,12 +49,12 @@ describe("Test area mutations", () => {
 
         areas = MutableAreaDataSource.getInstance()
         // We need a root country, and it is beyond the scope of these tests
-        rootCountry = await areas.addCountry("USA")
+        rootCountry =  await areas.addCountry("USA")
       })
 
-      afterAll(inMemoryDB.close)
+    afterAll(inMemoryDB.close)
 
-      describe("Add area param cases", () => {
+    describe("Add area param cases", () => {
         test("Add a simple area with no specifications using a parent UUID", () => areas
             .addArea(testUser, 'Texas2', rootCountry.metadata.area_id)
             .then(area => {
@@ -197,43 +196,45 @@ describe("Test area mutations", () => {
     }))
 
     describe("updating of areas should propogate embeddedRelations", () => {
-        async function growTree(depth: number, bredth: number = 1): Promise<AreaType[]> {
-            const tree: AreaType[] = [rootCountry]
+        const defaultDepth = 5
+        async function growTree(depth: number = defaultDepth, bredth: number = 1): Promise<AreaType[]> {
+            const tree: AreaType[] = [rootCountry, await addArea()]
 
             async function grow(from: AreaType, level: number = 0) {
                 if (level >= depth) return
 
                 await Promise.all(Array.from({ length: bredth })
-                    .map(() => addArea(undefined, { parent: from })
+                    .map((_ ,idx) => addArea(`${level}-${idx}`, { parent: from })
                     .then(area => {
+                        if (!area.parent?.equals(from._id)) {
+                            throw new Error(`${area.parent} should have been ${from._id}`)
+                        }
                         tree.push(area)
                         return grow(area, level + 1)
                     })))
             }
 
-            await grow(await addArea(undefined, { parent: rootCountry}))
+            await grow(tree.at(-1)!)
+
             return tree
         }
 
-        test('computing ancestors from reified node', async () => growTree(5).then(async (tree) => {
-            // The 'tree' does not branch so it should be a straightforward line
-            expect(tree.length).toBe(6)
-
-            // This will validate that the flat tree structure flows from root at ordinal 0 to leaf
-            // at ordinal tree[-1]
-            // tree.reduce((previous, current) => {
-            //     expect(current.parent).toEqual(previous._id)
-            //     return current
-            // })
-
+        test('computing ancestors from reified node', async () => growTree().then(async (tree) => {
             let computedAncestors = await areas.computeAncestorsFor(tree.at(-1)!._id)
 
-            expect(computedAncestors.length).toBe(tree.length)
-            // Similar to the previous validation step
+            // Check that each node refers specifically to the previous one as its parent
+            // - this will check that the areas are in order and that no nodes are skipped.
             computedAncestors.reduce((previous, current, idx) => {
-                expect(current.ancestor.parent).toEqual(previous.ancestor._id)
+                expect(current.ancestor.parent?.equals(previous.ancestor._id))
+                expect(current.ancestor._id.equals(tree[idx]._id))
                 return current
             })
+        }))
+
+        test('ancestors should be computed on area add.', async () => growTree(5).then(async (tree) => {
+            let leaf = tree.at(-1)!
+            expect(leaf.embeddedRelations.pathTokens.join(',')).toEqual(tree.map(i => i.area_name).join(','))
+            expect(leaf.embeddedRelations.ancestors).toEqual(tree.map(i => i.metadata.area_id).join(','))
         }))
     })
 })

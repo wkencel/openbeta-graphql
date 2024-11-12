@@ -35,5 +35,5 @@ export async function computeEmbeddedRelations (rootId: mongoose.Types.ObjectId)
     }
   ])
 
-  throw new Error("not implemented yet")
+  throw new Error('not implemented yet')
 }

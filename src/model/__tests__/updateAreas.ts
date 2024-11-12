@@ -178,7 +178,8 @@ describe('Areas', () => {
 
     let usaInDB = await areas.findOneAreaByUUID(usa.metadata.area_id)
     // verify number of child areas in parent
-    expect(usaInDB.embeddedRelations.children as any[]).toHaveLength(3)
+    expect(Array.isArray(usaInDB.embeddedRelations.children))
+    expect(usaInDB.embeddedRelations.children).toHaveLength(3)
 
     // verify child area IDs in parent
     expect(usaInDB.embeddedRelations.children).toEqual([
@@ -190,9 +191,9 @@ describe('Areas', () => {
     await areas.deleteArea(testUser, ca.metadata.area_id)
 
     usaInDB = await areas.findOneAreaByUUID(usa.metadata.area_id)
-
+    console.log(usaInDB.embeddedRelations)
     // verify child area IDs (one less than before)
-    expect(usaInDB.embeddedRelations.children as any[]).toHaveLength(2)
+    expect(usaInDB.embeddedRelations.children).toHaveLength(2)
     expect(usaInDB.embeddedRelations.children).toEqual([
       or._id,
       wa._id

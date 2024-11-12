@@ -104,10 +104,7 @@ const AggregateSchema = new Schema<AggregateType>({
   byGradeBand: CountByGradeBandSchema
 }, { _id: false })
 
-/**
- *
- */
-const AreaEmbeddedRelationsSchema = new Schema<AreaEmbeddedRelations>({
+export const AreaEmbeddedRelationsSchema = new Schema<AreaEmbeddedRelations>({
   /**
    * All child area documents that are contained within this area.
    * This has a strong relation to the areas collection, and contains only direct
@@ -115,7 +112,13 @@ const AreaEmbeddedRelationsSchema = new Schema<AreaEmbeddedRelations>({
    *
    * computed from the remote documents parent field
    */
-  children: [{ type: Schema.Types.ObjectId, ref: 'areas', required: false, default: [], index: true }],
+  children: [{
+    type: Schema.Types.ObjectId,
+    ref: 'areas',
+    required: false,
+    default: [],
+    index: true
+  }],
   /**
    * ancestors ids of this areas parents, traversing up the heirarchy to the root area.
    * This is encoded as a string, but is really an array delimited by comma.
@@ -183,6 +186,8 @@ AreaSchema.index({
 AreaSchema.index({
   children: 1
 })
+
+connection.model('embeddedRelations', AreaEmbeddedRelationsSchema)
 
 export const getAreaModel = (name: string = 'areas'): mongoose.Model<AreaType> =>
   connection.model(name, AreaSchema)

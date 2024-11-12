@@ -8,7 +8,6 @@ import mongoose, { ClientSession } from 'mongoose'
 import { NIL, v5 as uuidv5 } from 'uuid'
 import muuid, { MUUID } from 'uuid-mongodb'
 
-import { GradeContexts } from '../GradeUtils.js'
 import CountriesLngLat from '../data/countries-with-lnglat.json' assert {type: 'json'}
 import {
   AreaDocumnent,
@@ -29,8 +28,7 @@ import { createInstance as createExperimentalUserDataSource } from '../model/Exp
 import { sanitizeStrict } from '../utils/sanitize.js'
 import AreaDataSource from './AreaDataSource.js'
 import { changelogDataSource } from './ChangeLogDataSource.js'
-import { withTransaction } from '../utils/helpers.js'
-import { arMA } from 'date-fns/locale'
+import { muuidToString, withTransaction } from '../utils/helpers.js'
 
 isoCountries.registerLocale(enJson)
 
@@ -64,11 +62,15 @@ export default class MutableAreaDataSource extends AreaDataSource {
     // that the name is unique for this context
     let neighbours: string[]
 
+    const common = {
+      _deleting: { $exists: false }
+    }
+
     if (parent !== null) {
-      neighbours = (await this.areaModel.find({ parent: parent._id })).map(i => i.area_name)
+      neighbours = (await this.areaModel.find({ parent: parent._id, ...common })).map(i => i.area_name)
     } else {
       // locate nodes with no direct parent (roots)
-      neighbours = (await this.areaModel.find({ parent: { $exists: false } })).map(i => i.area_name)
+      neighbours = (await this.areaModel.find({ parent: { $exists: false }, ...common })).map(i => i.area_name)
     }
 
     neighbours = neighbours.map(neighbour => this.areaNameCompare(neighbour))
@@ -262,7 +264,12 @@ export default class MutableAreaDataSource extends AreaDataSource {
     const rs1 = await this.areaModel.insertMany(newArea, { session })
 
     // Make sure parent knows about this new area
-    parent.embeddedRelations.children.push(newArea._id)
+    if (parent.embeddedRelations.children === null) {
+      parent.embeddedRelations.children = [newArea._id]
+    } else {
+      parent.embeddedRelations.children.push(newArea._id)
+    }
+
     await parent.save({ timestamps: false })
     return rs1[0].toObject()
   }
@@ -309,28 +316,13 @@ export default class MutableAreaDataSource extends AreaDataSource {
       operation: OperationType.deleteArea,
       seq: 0
     }
-    // Remove this area id from the parent.children[]
+
+    // Remove this area id from the parents denormalized children
     await this.areaModel.updateMany(
+      { _id: area.parent },
       {
-        'embeddedRelations.children': area._id
-      },
-      [{
-        $set: {
-          'embeddedRelations.children': {
-            $filter: {
-              input: '$children',
-              as: 'child',
-              cond: { $ne: ['$$child', area._id] }
-            }
-          },
-          updatedBy: user,
-          '_change.prevHistoryId': '$_change.historyId',
-          _change: produce(_change, draft => {
-            draft.seq = 0
-          })
-        }
-      }]
-      , {
+        $pull: { 'embeddedRelations.children': area._id }
+      }, {
         timestamps: false
       }).orFail().session(session)
 
@@ -404,7 +396,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
       // area names must be unique in a document area structure context, so if the name has changed we need to check
       // that the name is unique for this context
       if (areaName !== undefined && this.areaNameCompare(areaName) !== this.areaNameCompare(area.area_name)) {
-        await this.validateUniqueAreaName(areaName, await this.areaModel.findOne({ children: area._id }).session(session))
+        await this.validateUniqueAreaName(areaName, await this.areaModel.findOne({ _id: area.parent }).session(session))
       }
 
       const opType = OperationType.updateArea
@@ -431,8 +423,6 @@ export default class MutableAreaDataSource extends AreaDataSource {
       if (areaName != null) {
         const sanitizedName = sanitizeStrict(areaName)
         area.set({ area_name: sanitizedName })
-
-        // change our pathTokens
         await this.computeEmbeddedAncestors(area)
       }
 
@@ -631,16 +621,25 @@ export default class MutableAreaDataSource extends AreaDataSource {
       const parentArea =
         await this.areaModel.findOne({ 'metadata.area_id': parentUuid })
           .batchSize(10)
-          .populate<{ children: AreaDocumnent[] }>({ path: 'children', model: this.areaModel })
+          .populate<{ embeddedRelations: { children: AreaDocumnent[] } }>({
+          path: 'embeddedRelations.children',
+          model: this.areaModel
+        })
           .allowDiskUse(true)
           .session(session)
           .orFail()
 
       const acc: StatsSummary[] = []
+
+      if (parentArea.embeddedRelations.children === null) {
+        console.log(await this.areaModel.findOne({ 'metadata.area_id': parentUuid }))
+        throw new Error('Oopie doopers')
+      }
+
       /**
        * Collect existing stats from all children. For affected node, use the stats from previous calculation.
        */
-      for (const childArea of parentArea.children) {
+      for (const childArea of parentArea.embeddedRelations.children) {
         if (childArea._id.equals(area._id)) {
           if (childSummary != null) acc.push(childSummary)
         } else {
@@ -696,9 +695,11 @@ export const newAreaHelper = (areaName: string, parent: AreaType): AreaType => {
     climbs: [],
     embeddedRelations: {
       children: [],
-      ancestors: parent.embeddedRelations.ancestors + `,${uuid}`,
+      // ancestors and pathTokens terminate at the present node, while the ancestorIndex
+      // terminates at the parent.
+      ancestors: parent.embeddedRelations.ancestors + `,${muuidToString(uuid)}`,
       pathTokens: [...parent.embeddedRelations.pathTokens, areaName],
-      ancestorIndex: [...parent.embeddedRelations.ancestorIndex, _id]
+      ancestorIndex: [...parent.embeddedRelations.ancestorIndex, parent._id]
     },
     gradeContext: parent.gradeContext,
     aggregate: {
