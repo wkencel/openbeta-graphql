@@ -53,6 +53,27 @@ export interface UpdateAreaOptions {
 export default class MutableAreaDataSource extends AreaDataSource {
   experimentalUserDataSource = createExperimentalUserDataSource()
 
+  private areaNameCompare (name: string): string {
+    return name.trim().toLocaleLowerCase().split(' ').filter(i => i !== '').join(' ')
+  }
+
+  private async validateUniqueAreaName (areaName: string, parent: AreaType | null): Promise<void> {
+    // area names must be unique in a document area structure context, so if the name has changed we need to check
+    // that the name is unique for this context
+    let neighbours: string[]
+
+    if (parent !== null) {
+      neighbours = (await this.areaModel.find({ _id: parent.children })).map(i => i.area_name)
+    } else {
+      neighbours = (await this.areaModel.find({ pathTokens: { $size: 1 } })).map(i => i.area_name)
+    }
+
+    neighbours = neighbours.map(i => this.areaNameCompare(i))
+    if (neighbours.includes(this.areaNameCompare(areaName))) {
+      throw new UserInputError(`[${areaName}]: This name already exists for some other area in this parent`)
+    }
+  }
+
   async setDestinationFlag (user: MUUID, uuid: MUUID, flag: boolean): Promise<AreaType | null> {
     const session = await this.areaModel.startSession()
     let ret: AreaType | null = null
@@ -118,6 +139,8 @@ export default class MutableAreaDataSource extends AreaDataSource {
       // account for a few new/unofficial countries without lat,lng in the lookup table
       logger.warn(`Missing lnglat for ${countryName}`)
     }
+
+    await this.validateUniqueAreaName(countryName, null)
 
     const rs = await this.areaModel.insertMany(doc)
     if (rs.length === 1) {
@@ -193,6 +216,8 @@ export default class MutableAreaDataSource extends AreaDataSource {
       parent.metadata.leaf = false
       parent.metadata.isBoulder = false
     }
+
+    await this.validateUniqueAreaName(areaName, parent)
 
     // See https://github.com/OpenBeta/openbeta-graphql/issues/244
     let experimentaAuthorId: MUUID | null = null
@@ -375,6 +400,12 @@ export default class MutableAreaDataSource extends AreaDataSource {
       let experimentalAuthorId: MUUID | null = null
       if (experimentalAuthor != null) {
         experimentalAuthorId = await this.experimentalUserDataSource.updateUser(session, experimentalAuthor.displayName, experimentalAuthor.url)
+      }
+
+      // area names must be unique in a document area structure context, so if the name has changed we need to check
+      // that the name is unique for this context
+      if (areaName !== undefined && this.areaNameCompare(areaName) !== this.areaNameCompare(area.area_name)) {
+        await this.validateUniqueAreaName(areaName, await this.areaModel.findOne({ children: area._id }).session(session))
       }
 
       const opType = OperationType.updateArea
@@ -611,7 +642,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
 
 export const newAreaHelper = (areaName: string, parentAncestors: string, parentPathTokens: string[], parentGradeContext: GradeContexts): AreaType => {
   const _id = new mongoose.Types.ObjectId()
-  const uuid = genMUIDFromPaths(parentPathTokens, areaName)
+  const uuid = muuid.v4()
 
   const pathTokens = produce(parentPathTokens, draft => {
     draft.push(areaName)
@@ -662,16 +693,4 @@ export const countryCode2Uuid = (code: string): MUUID => {
   }
   const alpha3 = code.length === 2 ? isoCountries.toAlpha3(code) : code
   return muuid.from(uuidv5(alpha3.toUpperCase(), NIL))
-}
-
-/**
- * Generate a stable UUID from a list of paths. Example: `Canada|Squamish => 8f623793-c2b2-59e0-9e64-d167097e3a3d`
- * @param parentPathTokens Ancestor paths
- * @param thisPath Current area
- * @returns MUUID
- */
-export const genMUIDFromPaths = (parentPathTokens: string[], thisPath: string): MUUID => {
-  const keys = parentPathTokens.slice() // clone array
-  keys.push(thisPath)
-  return muuid.from(uuidv5(keys.join('|').toUpperCase(), NIL))
 }

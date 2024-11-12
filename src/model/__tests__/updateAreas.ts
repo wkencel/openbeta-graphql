@@ -224,14 +224,14 @@ describe('Areas', () => {
     // eslint-disable-next-line
     await new Promise(res => setTimeout(res, 2000))
 
-    await expect(areas.addCountry('ita')).rejects.toThrowError('E11000 duplicate key error')
+    await expect(areas.addCountry('ita')).rejects.toThrowError('This name already exists for some other area in this parent')
   })
 
   it('should not create duplicate sub-areas', async () => {
     const fr = await areas.addCountry('fra')
     await areas.addArea(testUser, 'Verdon Gorge', fr.metadata.area_id)
     await expect(areas.addArea(testUser, 'Verdon Gorge', fr.metadata.area_id))
-      .rejects.toThrowError('E11000 duplicate key error')
+      .rejects.toThrowError('This name already exists for some other area in this parent')
   })
 
   it('should fail when adding without a parent country', async () => {
