@@ -91,6 +91,9 @@ printjson(db.areas.createIndex({ 'embeddedRelations.ancestors._id': 1 }))
 printjson(db.areas.createIndex({ 'embeddedRelations.ancestors.uuid': 1 }))
 printjson(db.areas.createIndex({ 'embeddedRelations.ancestors.name': 1 }))
 
+printjson(db.areas.createIndex({ 'embeddedRelations.ancestors._id': 1, 'embeddedRelations.ancestors.name': 1 }))
+
+
 //  https://www.mongodb.com/docs/v6.2/reference/method/db.collection.createIndex/#create-an-index-on-a-multiple-fields
 //  > The order of fields in a compound index is important for supporting sort() operations using the index.
 // It is not clear to me if there is a $lookup speed implication based on the direction of the join.

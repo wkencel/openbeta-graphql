@@ -6,12 +6,23 @@ import { getAreaModel, createIndexes } from "../../db"
 import inMemoryDB from "../../utils/inMemoryDB"
 import { muuidToString } from "../../utils/helpers"
 
-
 describe("updating of areas should propogate embeddedRelations", () => {
     let areas: MutableAreaDataSource
     let rootCountry: AreaType
     let areaCounter = 0
     const testUser = muid.v4()
+
+    beforeAll(async () => {
+        await inMemoryDB.connect()
+        await getAreaModel().collection.drop()
+        await createIndexes()
+
+        areas = MutableAreaDataSource.getInstance()
+        // We need a root country, and it is beyond the scope of these tests
+        rootCountry =  await areas.addCountry("USA")
+      })
+
+    afterAll(inMemoryDB.close)
 
     async function addArea(name?: string, extra?: Partial<{ leaf: boolean, boulder: boolean, parent: MUUID | AreaType}>) {
         function isArea(x: any): x is AreaType {
@@ -42,18 +53,6 @@ describe("updating of areas should propogate embeddedRelations", () => {
             extra?.boulder
         )
     }
-
-    beforeAll(async () => {
-        await inMemoryDB.connect()
-        await getAreaModel().collection.drop()
-        await createIndexes()
-
-        areas = MutableAreaDataSource.getInstance()
-        // We need a root country, and it is beyond the scope of these tests
-        rootCountry =  await areas.addCountry("USA")
-      })
-
-    afterAll(inMemoryDB.close)
 
     const defaultDepth = 5
     async function growTree(depth: number = defaultDepth, bredth: number = 1): Promise<AreaType[]> {
@@ -129,10 +128,6 @@ describe("updating of areas should propogate embeddedRelations", () => {
         expect(tree[target].embeddedRelations.ancestors.map(i => i.name)[target]).toEqual('updated name')
     }))
 
-    test.todo("moving a leaf area to a new parent should update its old and new parent")
-    test.todo("moving an area with children to a new parent should update its old and new parent")
-    test.todo("moving an area with children to a new parent should update all of its children embeddings")
-
     test("re-naming a parent should update all descendant pathTokens", async () => growTree(5, 2).then(async tree => {
         let target = 1
         let oldName =  tree[target].area_name
@@ -144,10 +139,17 @@ describe("updating of areas should propogate embeddedRelations", () => {
         )
 
         // Check every node in the tree, with nodes of a certain depth needing to have their pathtokens checked.
-        for (const node of tree.filter(i => i.embeddedRelations.ancestors.length >= target)) {
+        for (const node of tree.filter(i => i.embeddedRelations.ancestors.length > target)) {
             let area = await areas.findOneAreaByUUID(node.metadata.area_id)
             expect(area.embeddedRelations.ancestors.map(i => i.name)[target]).not.toEqual(oldName)
             expect(area.embeddedRelations.ancestors.map(i => i.name)[target]).toEqual('updated name')
         }
     }))
+
+
+    describe("effects related to changing an areas parent", () => {
+        test.todo("moving a leaf area to a new parent should update its old and new parent")
+        test.todo("moving an area with children to a new parent should update its old and new parent")
+        test.todo("moving an area with children to a new parent should update all of its children embeddings")
+    })
 })

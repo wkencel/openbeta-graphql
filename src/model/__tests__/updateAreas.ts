@@ -152,7 +152,7 @@ describe('Areas', () => {
     a1Updated = await areas.updateArea(testUser, a1?.metadata.area_id, doc2)
     expect(a1Updated?.metadata.lnglat).toEqual(geometry('Point', [doc2.lng, doc2.lat]))
     expect(a1Updated?.metadata.isDestination).toEqual(doc2.isDestination)
-  })
+  }, 1000)
 
   it('should not update country name and code', async () => {
     const country = await areas.addCountry('lao')
@@ -288,110 +288,6 @@ describe('Areas', () => {
         metadata: expect.objectContaining({
           leftRightIndex: change2.leftRightIndex
         })
-      }))
-  })
-
-  it('should update self and childrens pathTokens', async () => {
-    await areas.addCountry('JP')
-    const a1 = await areas.addArea(testUser, 'Parent', null, 'JP')
-    const b1 = await areas.addArea(testUser, 'B1', a1.metadata.area_id)
-    const b2 = await areas.addArea(testUser, 'B2', a1.metadata.area_id)
-    const c1 = await areas.addArea(testUser, 'C1', b1.metadata.area_id)
-    const c2 = await areas.addArea(testUser, 'C2', b1.metadata.area_id)
-    const c3 = await areas.addArea(testUser, 'C3', b2.metadata.area_id)
-    const e1 = await areas.addArea(testUser, 'E1', c3.metadata.area_id)
-
-    let a1Actual = await areas.findOneAreaByUUID(a1.metadata.area_id)
-    expect(a1Actual).toEqual(
-      expect.objectContaining({
-        area_name: 'Parent',
-        pathTokens: ['Japan', 'Parent']
-      }))
-
-    let b1Actual = await areas.findOneAreaByUUID(b1.metadata.area_id)
-    expect(b1Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Parent', 'B1']
-      }))
-
-    let b2Actual = await areas.findOneAreaByUUID(b2.metadata.area_id)
-    expect(b2Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Parent', 'B2']
-      }))
-
-    let c1Actual = await areas.findOneAreaByUUID(c1.metadata.area_id)
-    expect(c1Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Parent', 'B1', 'C1']
-      }))
-
-    let c2Actual = await areas.findOneAreaByUUID(c2.metadata.area_id)
-    expect(c2Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Parent', 'B1', 'C2']
-      }))
-
-    let c3Actual = await areas.findOneAreaByUUID(c3.metadata.area_id)
-    expect(c3Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Parent', 'B2', 'C3']
-      }))
-
-    let e1Actual = await areas.findOneAreaByUUID(e1.metadata.area_id)
-    expect(e1Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Parent', 'B2', 'C3', 'E1']
-      }))
-
-    // Update
-    const doc1: AreaEditableFieldsType = {
-      areaName: 'Test Name'
-    }
-    await areas.updateArea(testUser, a1?.metadata.area_id, doc1)
-
-    // Verify
-    a1Actual = await areas.findOneAreaByUUID(a1.metadata.area_id)
-    expect(a1Actual).toEqual(
-      expect.objectContaining({
-        area_name: 'Test Name',
-        pathTokens: ['Japan', 'Test Name']
-      }))
-
-    b1Actual = await areas.findOneAreaByUUID(b1.metadata.area_id)
-    expect(b1Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Test Name', 'B1']
-      }))
-
-    b2Actual = await areas.findOneAreaByUUID(b2.metadata.area_id)
-    expect(b2Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Test Name', 'B2']
-      }))
-
-    c1Actual = await areas.findOneAreaByUUID(c1.metadata.area_id)
-    expect(c1Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Test Name', 'B1', 'C1']
-      }))
-
-    c2Actual = await areas.findOneAreaByUUID(c2.metadata.area_id)
-    expect(c2Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Test Name', 'B1', 'C2']
-      }))
-
-    c3Actual = await areas.findOneAreaByUUID(c3.metadata.area_id)
-    expect(c3Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Test Name', 'B2', 'C3']
-      }))
-
-    e1Actual = await areas.findOneAreaByUUID(e1.metadata.area_id)
-    expect(e1Actual).toEqual(
-      expect.objectContaining({
-        pathTokens: ['Japan', 'Test Name', 'B2', 'C3', 'E1']
       }))
   })
 })

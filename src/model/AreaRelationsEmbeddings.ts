@@ -13,6 +13,7 @@ export class AreaRelationsEmbeddings {
     if (area.parent === undefined) {
       throw new Error('No child reference can be reified for this area because its parent is undefined.')
     }
+
     await this.areaModel.updateOne(
       { _id: area.parent },
       { $addToSet: { 'embeddedRelations.children': area._id } }
@@ -45,11 +46,18 @@ export class AreaRelationsEmbeddings {
     ])
   }
 
+  /**
+   * When an area name changes, there may be denormalized references to it elsewhere in the collection
+   * that we would like to change.
+   */
   async syncNamesInEmbeddings (area: AreaType): Promise<void> {
     await this.areaModel.updateMany(
-      { 'embeddedRelations.ancestors._id': area._id },
+      // TODO: My vision for this function was that the (exists.name != new.name) clause should not have been necessary,
+      //  but the function goes into a spin-loop otherwise. So, perhaps a changestream is firing somewhere else.
+      //  I didn't spend much time in the debugger parsing the stack, but I would like to know what's happening here.
+      { 'embeddedRelations.ancestors._id': area._id, 'embeddedRelations.ancestors.name': { $ne: area.area_name } },
       { $set: { 'embeddedRelations.ancestors.$[elem].name': area.area_name } },
-      { arrayFilters: [{ 'elem._id': area._id }] }
+      { arrayFilters: [{ 'elem._id': area._id }], timestamps: false }
     )
   }
 

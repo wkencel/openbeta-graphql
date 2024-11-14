@@ -464,7 +464,7 @@ describe('Climb CRUD', () => {
         { ...newSportClimb1, grade: 'V6' }]) // bad UIAA grade (V-scale used)
 
     expect(newIDs).toHaveLength(4)
-
+    console.log(muid.from(newIDs[0]))
     const climb1 = await climbs.findOneClimbByMUUID(muid.from(newIDs[0]))
     expect(climb1?.grades).toEqual({ uiaa: '6+' })
 
@@ -479,7 +479,8 @@ describe('Climb CRUD', () => {
   })
 
   it('can update boulder problems', async () => {
-    const newDestination = await areas.addArea(testUser, 'Bouldering area A100', null, 'fr')
+    const gradeContext = 'fr'
+    const newDestination = await areas.addArea(testUser, 'Bouldering area A100', null, gradeContext)
 
     if (newDestination == null) fail('Expect new area to be created')
 
@@ -518,7 +519,7 @@ describe('Climb CRUD', () => {
     expect(updated).toHaveLength(2)
 
     const actual1 = await climbs.findOneClimbByMUUID(muid.from(newIDs[0]))
-
+    expect(actual1?.gradeContext?.toLocaleLowerCase()).toBe(gradeContext)
     expect(actual1).toMatchObject({
       name: changes[0].name,
       grades: {

@@ -26,8 +26,8 @@ import { sanitizeStrict } from '../utils/sanitize.js'
 import AreaDataSource from './AreaDataSource.js'
 import { changelogDataSource } from './ChangeLogDataSource.js'
 import { withTransaction } from '../utils/helpers.js'
-import { AreaRelationsEmbeddings } from './AreaRelationsEmbeddings'
-import { GradeContexts } from '../GradeUtils'
+import { AreaRelationsEmbeddings } from './AreaRelationsEmbeddings.js'
+import { getCountriesDefaultGradeContext, GradeContexts } from '../GradeUtils.js'
 
 isoCountries.registerLocale(enJson)
 
@@ -160,8 +160,9 @@ export default class MutableAreaDataSource extends AreaDataSource {
     const _id = new mongoose.Types.ObjectId()
     const uuid = countryCode2Uuid(countryCode)
     const country: AreaType = {
-      area_name: countryName,
       ...defaultArea,
+      area_name: countryName,
+      shortCode: alpha3,
       embeddedRelations: {
         ...defaultArea.embeddedRelations,
         ancestors: [{ _id, uuid, name: countryName }]
@@ -173,7 +174,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
       },
       _id,
       uuid,
-      gradeContext: GradeContexts.US
+      gradeContext: getCountriesDefaultGradeContext()[alpha3] ?? GradeContexts.US
     }
 
     // Look up the country lat,lng
