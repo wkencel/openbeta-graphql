@@ -280,6 +280,14 @@ export enum OperationType {
   /** signals that a user has pushed new user-changeable data has been pushed into an area document. */
   updateArea = 'updateArea',
 
+  /**
+   * signals that a user has reorganized an area structure by moving it (and, therefore, its children) to a new parent.
+   * Doing ancestor archeology cannot be established through derived fields, so there is minor complexity in tracing
+   * lineage over time, but all data required to build this audit trail should be preserved in the history of each
+   * documents .parent field.
+   **/
+  changeAreaParent = 'changeAreaParent',
+
   /** Set areas' sorting index */
   orderAreas = 'orderArea'
 }

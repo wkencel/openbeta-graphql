@@ -25,7 +25,7 @@ import { createInstance as createExperimentalUserDataSource } from '../model/Exp
 import { sanitizeStrict } from '../utils/sanitize.js'
 import AreaDataSource from './AreaDataSource.js'
 import { changelogDataSource } from './ChangeLogDataSource.js'
-import { withTransaction } from '../utils/helpers.js'
+import { resolveTransaction, useOrCreateTransaction, withTransaction } from '../utils/helpers.js'
 import { AreaRelationsEmbeddings } from './AreaRelationsEmbeddings.js'
 import { getCountriesDefaultGradeContext, GradeContexts } from '../GradeUtils.js'
 
@@ -400,6 +400,66 @@ export default class MutableAreaDataSource extends AreaDataSource {
   }
 
   /**
+   * Modify an areas parent. This will mutate the areas parent reference, so all of its children
+   * will come along with it (Same as if you were to move a directory with files in it to another directory)
+   *
+   * Note:
+   *  If you are a bolder free-soloist than I, you could try and merge this function into the updateArea
+   *  function so that parent is a mutable field in the same way that areaName is. However: it is harder.
+   *  Simple as that, you will have to deal with substantially more complex effects than simply treating
+   *  it as its own sequential operation.
+  */
+  async setAreaParent (user: MUUID, areaUuid: MUUID, newParent: MUUID, sessionCtx?: ClientSession): Promise<AreaType> {
+    return await resolveTransaction(this.areaModel, sessionCtx, async (session) => {
+      const area = await this.areaModel.findOne({ 'metadata.area_id': areaUuid })
+        .orFail()
+        .session(session)
+
+      if (area._deleting !== undefined) {
+        throw new UserInputError('This area is slated for deletion and cannot be edited')
+      }
+
+      if (area.parent === undefined) {
+        // This is a root node (country, likely) and so this is an operation with
+        // high level privliges that are currently not enumerated.
+        throw new Error('You cannot migrate, what appears to be, a country.')
+      }
+
+      const oldParent = await this.areaModel.findOne({
+        _id: area.parent
+      }).lean()
+        .session(session)
+        .orFail()
+
+      if (oldParent._id.equals(area.parent)) {
+        // The request is a no-op, waste no time. nothing has changed, so submit.
+        throw new UserInputError('no-op, the requested parent is ALREADY the parent.')
+      }
+
+      const nextParent = await this.areaModel.findById(oldParent._id).orFail().session(session)
+
+      area.parent = nextParent._id
+      await this.relations.computeEmbeddedAncestors(area, session)
+
+      const change = await changelogDataSource.create(session, user, OperationType.changeAreaParent)
+
+      area.set({
+        _change: {
+          user,
+          historyId: change._id,
+          prevHistoryId: area._change?.historyId._id,
+          operation: OperationType.changeAreaParent,
+          seq: 0
+        } satisfies ChangeRecordMetadataType,
+        updatedBy: user,
+      })
+
+      const cursor = await area.save({ session })
+      return await cursor.toObject()
+    })
+  }
+
+  /**
    * Update one or more area fields.
    *
    * *Note*: Users may not update country name and short code.
@@ -471,7 +531,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
         const sanitizedName = sanitizeStrict(areaName)
         area.set({ area_name: sanitizedName })
         // sync names in all relevant references to this area.
-        await this.relations.syncNamesInEmbeddings(area)
+        await this.relations.syncNamesInEmbeddings(area, session)
       }
 
       if (shortCode != null) area.set({ shortCode: shortCode.toUpperCase() })

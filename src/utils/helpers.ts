@@ -30,10 +30,7 @@ export const canonicalizeUsername = (username: string): string => username.repla
 // see https://jira.mongodb.org/browse/NODE-2014
 export const withTransaction = async <T>(session: ClientSession, closure: () => Promise<T>): Promise<T | undefined> => {
   let result: T | undefined
-  await session.withTransaction(async () => {
-    result = await closure()
-    return result
-  })
+  await session.withTransaction(async () => { result = await closure() }) as T
   return result
 }
 
@@ -56,4 +53,16 @@ export const useOrCreateTransaction = async<T>(owner: SessionStartable, session:
       await reifiedSession.endSession()
     }
   }
+}
+
+/** Like useOrCreateTransaction but will treat any call to  `session.abortTransaction()` as an
+ * exception (
+ *  which is not necessarily best practice, but the assumption here is that we have no
+ *  meaningful way of resolving data to a user unless the transaction succeeds all at once.
+ * )
+ */
+export const resolveTransaction = async<T>(owner: SessionStartable, session: ClientSession | undefined, closure: (session: ClientSession) => Promise<T>): Promise<T> => {
+  const result = await useOrCreateTransaction(owner, session, closure)
+  if (result === undefined) throw new Error('Transaction was explicitly ended but we did not account for that logic here')
+  return result
 }

@@ -195,4 +195,12 @@ describe("Test area mutations", () => {
         await addArea(nameShadow, { boulder: true, parent })
     }))
 
+    describe("cases for changing an areas parent",() => {
+        test.todo('Can update an areas parent reference')
+        test.todo('Updating an areas parents reference adds an area to its new parents children')
+        test.todo('Updating an areas parents reference REMOVED an area from its old parents children')
+        test.todo('Updating an areas parent reference should produce an appropriate changelog item')
+        test.todo('Updating an areas parent reference should update an areas embeddedRelations')
+        test.todo('Updating an areas parent reference should update an areas child embeddedRelations')
+    })
 })

@@ -147,9 +147,5 @@ describe("updating of areas should propogate embeddedRelations", () => {
     }))
 
 
-    describe("effects related to changing an areas parent", () => {
-        test.todo("moving a leaf area to a new parent should update its old and new parent")
-        test.todo("moving an area with children to a new parent should update its old and new parent")
-        test.todo("moving an area with children to a new parent should update all of its children embeddings")
-    })
+    test.todo("syncEmbeddedRelations")
 })
