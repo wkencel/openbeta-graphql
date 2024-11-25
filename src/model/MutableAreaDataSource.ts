@@ -25,7 +25,7 @@ import { createInstance as createExperimentalUserDataSource } from '../model/Exp
 import { sanitizeStrict } from '../utils/sanitize.js'
 import AreaDataSource from './AreaDataSource.js'
 import { changelogDataSource } from './ChangeLogDataSource.js'
-import { resolveTransaction, useOrCreateTransaction, withTransaction } from '../utils/helpers.js'
+import { muuidToString, resolveTransaction, withTransaction } from '../utils/helpers.js'
 import { AreaRelationsEmbeddings } from './AreaRelationsEmbeddings.js'
 import { getCountriesDefaultGradeContext, GradeContexts } from '../GradeUtils.js'
 
@@ -425,19 +425,24 @@ export default class MutableAreaDataSource extends AreaDataSource {
         throw new Error('You cannot migrate, what appears to be, a country.')
       }
 
+      // Retrieve the current parent for this area.
       const oldParent = await this.areaModel.findOne({
         _id: area.parent
       }).lean()
         .session(session)
         .orFail()
 
-      if (oldParent._id.equals(area.parent)) {
-        // The request is a no-op, waste no time. nothing has changed, so submit.
+      if (muuidToString(oldParent.metadata.area_id) === muuidToString(newParent)) {
+        // The request is a no-op, waste no time. nothing has changed
+        // we notify the user that this change has already been acknowledged with an error
+        // so that we are absolutely clear that nothing has changed.
         throw new UserInputError('no-op, the requested parent is ALREADY the parent.')
       }
 
-      const nextParent = await this.areaModel.findById(oldParent._id).orFail().session(session)
+      const nextParent = await this.areaModel.findOne({ 'metadata.area_id': newParent }).orFail().session(session)
 
+      // By this point we are satisfied that there are no obvious reasons to reject this request, so we can begin saving
+      // and producing effects in the context of this transaction.
       area.parent = nextParent._id
       await this.relations.computeEmbeddedAncestors(area, session)
 
@@ -451,7 +456,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
           operation: OperationType.changeAreaParent,
           seq: 0
         } satisfies ChangeRecordMetadataType,
-        updatedBy: user,
+        updatedBy: user
       })
 
       const cursor = await area.save({ session })

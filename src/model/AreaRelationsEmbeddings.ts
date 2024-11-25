@@ -66,6 +66,11 @@ export class AreaRelationsEmbeddings {
     ).session(session)
   }
 
+  /**
+   * For a given area, compute all areas that trace the path back to root.
+   * remember: This function does not terminate at area passed in, rather it stops at that areas <.parent>.
+   * This is out of step with how ancestors are computed elsewhere.
+   */
   async computeAncestorsFor (_id: mongoose.Types.ObjectId): Promise<Array<{ ancestor: AreaType }>> {
     return await this.areaModel.aggregate([
       { $match: { _id } },
@@ -102,25 +107,24 @@ export class AreaRelationsEmbeddings {
    *
    * will be updated with the relevant values.
    */
-  async syncEmbeddedRelations (area: AreaSinkReference, session: ClientSession, precompute?: DenormalizedAreaSummary[]): Promise<void> {
-    if (precompute === undefined) {
-      precompute = (await this.computeAncestorsFor(area._id)).map(({ ancestor }) => ({
+  async syncEmbeddedRelations (area: AreaSinkReference, session: ClientSession, ancestorPath?: DenormalizedAreaSummary[]): Promise<void> {
+    if (ancestorPath === undefined) {
+      ancestorPath = (await this.computeAncestorsFor(area._id)).map(({ ancestor }) => ({
         name: ancestor.area_name,
         _id: ancestor._id,
         uuid: ancestor.metadata.area_id
       }))
-    } else {
-      precompute = [
-        ...precompute,
-        {
-          name: area.area_name,
-          _id: area._id,
-          uuid: area.metadata.area_id
-        }]
     }
 
+    ancestorPath = [
+      ...ancestorPath,
+      {
+        name: area.area_name,
+        _id: area._id,
+        uuid: area.metadata.area_id
+      }]
+
     const children = await this.areaModel.find(
-      { parent: area._id, _deleting: { $exists: false } },
       { _id: 1, area_name: 1, 'metadata.area_id': 1 }
     )
 
@@ -128,7 +132,7 @@ export class AreaRelationsEmbeddings {
       this.areaModel.updateOne(
         { _id: area._id },
         {
-          'embeddedRelations.ancestors': precompute,
+          'embeddedRelations.ancestors': ancestorPath,
           // We've gone through the trouble of fetching this data, so we will update.
           'embeddedRelations.children': children.map(area => ({
             name: area.area_name,
@@ -137,7 +141,7 @@ export class AreaRelationsEmbeddings {
           }))
         }
       ).session(session),
-      ...children.map(async child => await this.syncEmbeddedRelations(child, session, precompute))
+      ...children.map(async child => await this.syncEmbeddedRelations(child, session, ancestorPath))
     ])
   }
 }

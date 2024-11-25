@@ -1,10 +1,29 @@
 import { MUUID } from "uuid-mongodb"
-import { AreaType } from "../../db/AreaTypes"
+import { AreaType, DenormalizedAreaSummary } from "../../db/AreaTypes"
 import MutableAreaDataSource from "../MutableAreaDataSource"
 import muid from 'uuid-mongodb'
 import { getAreaModel, createIndexes } from "../../db"
 import inMemoryDB from "../../utils/inMemoryDB"
 import { muuidToString } from "../../utils/helpers"
+
+export function embeddedRelationsReducer(path: AreaType[]) {
+    let trace: DenormalizedAreaSummary[] = []
+    path.forEach((area, idx) => {
+        trace.push({
+            uuid: area.metadata.area_id,
+            _id: area._id,
+            name: area.area_name
+        })
+
+        expect(area.embeddedRelations.ancestors).toMatchObject(trace)
+
+        if (idx === 0) {
+            return
+        }
+
+        area.parent?.equals(path[idx]._id)
+    })
+}
 
 describe("updating of areas should propogate embeddedRelations", () => {
     let areas: MutableAreaDataSource

@@ -5,6 +5,8 @@ import muid, { MUUID } from 'uuid-mongodb'
 import { AreaType, OperationType } from "../../db/AreaTypes"
 import { ChangeRecordMetadataType } from "../../db/ChangeLogType"
 import { UserInputError } from "apollo-server-core"
+import { muuidToString, resolveTransaction, useOrCreateTransaction } from "../../utils/helpers"
+import { embeddedRelationsReducer } from "./AreaRelationsEmbeddings.test"
 
 describe("Test area mutations", () => {
     let areas: MutableAreaDataSource
@@ -196,11 +198,117 @@ describe("Test area mutations", () => {
     }))
 
     describe("cases for changing an areas parent",() => {
-        test.todo('Can update an areas parent reference')
-        test.todo('Updating an areas parents reference adds an area to its new parents children')
-        test.todo('Updating an areas parents reference REMOVED an area from its old parents children')
-        test.todo('Updating an areas parent reference should produce an appropriate changelog item')
-        test.todo('Updating an areas parent reference should update an areas embeddedRelations')
-        test.todo('Updating an areas parent reference should update an areas child embeddedRelations')
+        test('Can update an areas parent reference', async () => addArea()
+            .then(parent => addArea(undefined, { parent }))
+            .then(async area => {
+                let otherArea = await addArea()
+                await areas.setAreaParent(testUser, area.metadata.area_id, otherArea.metadata.area_id)
+                expect(area.parent).toBeDefined()
+                expect(area.parent!.equals(otherArea._id))
+            }))
+
+            test('Updating an areas parents reference to the one already specified should throw', async () => addArea()
+                .then(async parent => [ await addArea(undefined, { parent }), parent])
+                .then(async ([area, parent]) => {
+                    expect(area.parent?.equals(parent._id))
+                    await expect(
+                        () => areas
+                        .setAreaParent(testUser, area.metadata.area_id, parent.metadata.area_id)
+                    )
+                        .rejects
+                        .toThrowError(UserInputError)
+                }))
+
+            test('Updating an areas parents reference adds an area to its new parents children', async () => addArea(undefined)
+                .then(async area => {
+                    let other = await addArea(undefined)
+                    expect(other.embeddedRelations.children).toHaveLength(0)
+                    await areas.setAreaParent(testUser, area.metadata.area_id, other.metadata.area_id)
+                    other = await areas.areaModel.findById(other._id).orFail()
+                    expect(other.embeddedRelations.children).toHaveLength(1)
+                    expect(other.embeddedRelations.children.some(child => child.equals(area._id)))
+                }))
+
+            test('test the unit of code that pulls children from the embedded array when there is no parent field to back it.', async () => addArea(undefined)
+                .then(async parent => {
+                    let child = await addArea(undefined, { parent })
+                    let otherParent = await addArea(undefined)
+
+                    parent = await areas.areaModel.findById(child.parent).orFail()
+
+                    // We expect the parent to now have a child-reference to the area that points back to its parent
+                    expect(child.parent?.equals(parent._id))
+                    expect(parent.embeddedRelations.children.some(child => child.equals(child._id))).toBeTruthy()
+
+                    // Manually change the parent reference
+                    // This should produce no effects and as a result our
+                    // await areas.areaModel.updateOne({ _id: child._id }, { parent: otherParent._id })
+                    child.parent = otherParent._id
+
+                    await useOrCreateTransaction(areas.areaModel, undefined, async (session) => {
+                      await areas.relations.deleteStaleReferences(child, session)
+                    })
+
+                    parent = await areas.areaModel.findById(parent._id).orFail()
+                    expect(parent.embeddedRelations.children.some(child => child.equals(child._id))).not.toBeTruthy()
+                }))
+
+            test('Updating an areas parents reference REMOVED an area from its old parents children', async () => addArea(undefined)
+                .then(async area => {
+                    await addArea(undefined)
+                    let other = await addArea(undefined)
+                    let original = await areas.areaModel.findById(area.parent).orFail()
+
+                    // We expect the original area to have a relation present to this node
+                    expect(original.embeddedRelations.children.some(child => child.equals(area._id))).toBeTruthy()
+
+                    await areas.setAreaParent(testUser, area.metadata.area_id, other.metadata.area_id)
+                    original = await areas.areaModel.findById(area.parent).orFail()
+
+                    // Now we expect that embedding to have updated
+                    expect(original.embeddedRelations.children.some(child => child.equals(area._id))).not.toBeTruthy()
+                }))
+
+            test.todo('Updating an areas parent reference should produce an appropriate changelog item')
+            test.todo('Updating an areas parent reference should update an areas embeddedRelations')
+            test('Modifying an areas parent should update its child embeddedRelations', async () => {
+                let railLength = 7
+                let rail: AreaType[] = [rootCountry]
+
+                for (const idx in Array.from({ length: railLength }).map((_, idx) => idx)) {
+                    rail.push(await addArea(undefined, { parent: rail[idx] }))
+                }
+
+                expect(rail).toHaveLength(railLength + 1)
+
+                const offset = 1
+                let newParent = await addArea()
+                await areas.setAreaParent(testUser, rail[offset].metadata.area_id, newParent.metadata.area_id)
+
+                for (const oldAreaData of rail.slice(1 + offset)) {
+                    // get the most up-to-date copy of this area
+                    const area = await areas.areaModel.findById(oldAreaData._id).orFail()
+                    // This expects a valid chain of IDs for each ancestor - the second-last ancestor is our parent
+                    expect(area.embeddedRelations.ancestors.at(-2)!._id.equals(area.parent!))
+
+                    const pathElement = area.embeddedRelations.ancestors[offset]
+                    // we expect the element at [offset] to have changed such that the new objectID is not equal to its previous value
+                    expect(pathElement._id.equals(oldAreaData.embeddedRelations.ancestors[offset]._id)).toEqual(false)
+                    // This will validate that the element at [offset] has been set to our target newParent
+                    expect(pathElement._id.equals(newParent._id))
+
+                    // If the above expectations are met but these following ones are not, then the ID was correctly migrated but the
+                    // name and UUID were not? This is a strange case indeed.
+                    expect(muuidToString(pathElement.uuid)).toEqual(muuidToString(newParent.metadata.area_id))
+
+                    
+                    expect(pathElement.name).not.toEqual(oldAreaData.embeddedRelations.ancestors[offset].name)
+                    expect(pathElement.name).toEqual(newParent.area_name)
+                }
+            })
+
+            test.todo('Attempting to update a countries parent should throw')
+            test.todo('Circular references should always be prohibitted')
+            test.todo('Self-referece should always be prohobitted')
     })
 })
