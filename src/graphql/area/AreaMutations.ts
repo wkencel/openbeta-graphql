@@ -4,6 +4,7 @@ import { AreaType } from '../../db/AreaTypes.js'
 import { ContextWithAuth } from '../../types.js'
 import type MutableAreaDataSource from '../../model/MutableAreaDataSource.js'
 import { BulkImportInputType, BulkImportResultType } from '../../db/BulkImportTypes.js'
+import { UserInputError } from 'apollo-server-core'
 
 const AreaMutations = {
 
@@ -67,6 +68,23 @@ const AreaMutations = {
       user.uuid,
       areaUuid,
       input
+    )
+  },
+
+  setAreaParent: async (_, { input }, { dataSources, user }: ContextWithAuth): Promise<AreaType | null> => {
+    const { areas } = dataSources
+
+    if (user?.uuid == null) throw new UserInputError('Missing user uuid')
+    if (input?.area == null) throw new UserInputError('Missing area uuid')
+    if (input?.newParent == null) throw new UserInputError('Missing area new parent uuid')
+
+    const areaUuid = muuid.from(input.uuid)
+    const newParentUuid = muuid.from(input.newParent)
+
+    return await areas.setAreaParent(
+      user.uuid,
+      areaUuid,
+      newParentUuid
     )
   },
 

@@ -168,5 +168,28 @@ describe('areas API', () => {
 
       expect(response.statusCode).toBe(200)
     })
+
+    it('should allow calling of the setAreaParent gql endpoint.', async () => {
+      const testArea = await areas.addArea(muuid.from(userUuid), 'A Rolling Stone', usa.metadata.area_id)
+
+      const response = await queryAPI({
+        query: `
+          mutation SetAreaParent($area: ID!, $newParent: ID!) {
+            setAreaParent(area: $area, newParent: $newParent) {
+              areaName
+              area_name
+            }
+          }
+        `,
+        operationName: 'SetAreaParent',
+        userUuid,
+        app,
+        // Move it to canada
+        variables: { area: testArea.metadata.area_id, newParent: ca.metadata.area_id }
+      })
+
+      console.log(response.body)
+      expect(response.statusCode).toBe(200)
+    })
   })
 })

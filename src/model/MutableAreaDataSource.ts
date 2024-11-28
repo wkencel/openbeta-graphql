@@ -454,6 +454,9 @@ export default class MutableAreaDataSource extends AreaDataSource {
         throw new AreaStructureError('CIRCULAR STRUCTURE: The requested parent is already a descendant, and so cannot also be a parent.')
       }
 
+      // the name of the area being moved into this area must be unique in its new context
+      await this.validateUniqueAreaName(area.area_name, nextParent)
+
       // By this point we are satisfied that there are no obvious reasons to reject this request, so we can begin saving
       // and producing effects in the context of this transaction.
       area.parent = nextParent._id

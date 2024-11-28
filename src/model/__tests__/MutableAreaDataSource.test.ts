@@ -199,14 +199,26 @@ describe("Test area mutations", () => {
     }))
 
     describe("cases for changing an areas parent",() => {
-        test('Can update an areas parent reference', async () => addArea()
-            .then(parent => addArea(undefined, { parent }))
-            .then(async area => {
-                let otherArea = await addArea()
-                await areas.setAreaParent(testUser, area.metadata.area_id, otherArea.metadata.area_id)
-                expect(area.parent).toBeDefined()
-                expect(area.parent!.equals(otherArea._id))
-            }))
+            test('Can update an areas parent reference', async () => addArea()
+                .then(parent => addArea(undefined, { parent }))
+                .then(async area => {
+                    let otherArea = await addArea()
+                    await areas.setAreaParent(testUser, area.metadata.area_id, otherArea.metadata.area_id)
+                    expect(area.parent).toBeDefined()
+                    expect(area.parent!.equals(otherArea._id))
+                }))
+
+            test('Updating an area will not produce duplicate named children in the target', async () => addArea()
+                .then(async parent => addArea(undefined, { parent }))
+                .then(async area => {
+                    let otherArea = await addArea()
+                    // put a duplicate name inside otherArea
+                    addArea(area.area_name, { parent: otherArea })
+
+                    await expect(
+                        () => areas.setAreaParent(testUser, area.metadata.area_id, otherArea.metadata.area_id)
+                    ).rejects.toThrowError(UserInputError)
+                }))
 
             test('Updating an areas parents reference to the one already specified should throw', async () => addArea()
                 .then(async parent => [ await addArea(undefined, { parent }), parent])
