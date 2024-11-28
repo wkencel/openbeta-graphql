@@ -7,6 +7,7 @@ import { ChangeRecordMetadataType } from "../../db/ChangeLogType"
 import { UserInputError } from "apollo-server-core"
 import { muuidToString, resolveTransaction, useOrCreateTransaction } from "../../utils/helpers"
 import { embeddedRelationsReducer } from "./AreaRelationsEmbeddings.test"
+import { AreaStructureError } from "../AreaRelationsEmbeddings"
 
 describe("Test area mutations", () => {
     let areas: MutableAreaDataSource
@@ -269,8 +270,32 @@ describe("Test area mutations", () => {
                     expect(original.embeddedRelations.children.some(child => child.equals(area._id))).not.toBeTruthy()
                 }))
 
-            test.todo('Updating an areas parent reference should produce an appropriate changelog item')
-            test.todo('Updating an areas parent reference should update an areas embeddedRelations')
+            test('Updating an areas parent reference should produce an appropriate changelog item', async () => {
+                let area = await addArea()
+                let parent = await addArea()
+
+                await areas.setAreaParent(testUser, area.metadata.area_id, parent.metadata.area_id)
+
+                area = await areas.findOneAreaByUUID(area.metadata.area_id)
+                expect(area._change).toBeDefined()
+                expect(area._change!.operation).toEqual(OperationType.changeAreaParent)
+            })
+            test('Updating an areas parent reference should update an areas embeddedRelations', async () => {
+                let railLength = 7
+                let rail: AreaType[] = [rootCountry]
+                let newParent = await addArea()
+
+                for (const idx in Array.from({ length: railLength }).map((_, idx) => idx)) {
+                    rail.push(await addArea(undefined, { parent: rail[idx] }))
+                }
+
+                expect(rail).toHaveLength(railLength + 1)
+
+                await areas.setAreaParent(testUser, rail[1].metadata.area_id, newParent.metadata.area_id)
+                let area = await areas.findOneAreaByUUID(rail[1].metadata.area_id)
+                expect(area.embeddedRelations.ancestors[2]._id.equals(newParent._id))
+            })
+
             test('Modifying an areas parent should update its child embeddedRelations', async () => {
                 let railLength = 7
                 let rail: AreaType[] = [rootCountry]
@@ -289,7 +314,7 @@ describe("Test area mutations", () => {
                     // get the most up-to-date copy of this area
                     const area = await areas.areaModel.findById(oldAreaData._id).orFail()
                     // This expects a valid chain of IDs for each ancestor - the second-last ancestor is our parent
-                    expect(area.embeddedRelations.ancestors.at(-2)!._id.equals(area.parent!))
+                    expect(area.embeddedRelations.ancestors.at(-2)!._id.equals(area.parent!)).toEqual(true)
 
                     const pathElement = area.embeddedRelations.ancestors[offset]
                     // we expect the element at [offset] to have changed such that the new objectID is not equal to its previous value
@@ -301,14 +326,29 @@ describe("Test area mutations", () => {
                     // name and UUID were not? This is a strange case indeed.
                     expect(muuidToString(pathElement.uuid)).toEqual(muuidToString(newParent.metadata.area_id))
 
-                    
                     expect(pathElement.name).not.toEqual(oldAreaData.embeddedRelations.ancestors[offset].name)
                     expect(pathElement.name).toEqual(newParent.area_name)
                 }
             })
 
-            test.todo('Attempting to update a countries parent should throw')
-            test.todo('Circular references should always be prohibitted')
-            test.todo('Self-referece should always be prohobitted')
+            test('Attempting to update a countries parent should throw', async () => {
+                let other = await areas.addCountry('CA')
+                expect(() => areas.setAreaParent(testUser, rootCountry.metadata.area_id, other.metadata.area_id)).rejects.toThrowError(AreaStructureError)
+            })
+
+            test('Circular references should always be prohibitted', async () => {
+                let parent = await addArea()
+                let child = await addArea(undefined, { parent })
+                let child2 = await addArea(undefined, { parent: child })
+                
+                expect(() => areas.setAreaParent(testUser, parent.metadata.area_id, child.metadata.area_id )).rejects.toThrowError(AreaStructureError)
+                expect(() => areas.setAreaParent(testUser, parent.metadata.area_id, child2.metadata.area_id )).rejects.toThrowError(AreaStructureError)
+                expect(() => areas.setAreaParent(testUser, child.metadata.area_id, child2.metadata.area_id )).rejects.toThrowError(AreaStructureError)
+            })
+
+            test('Self-referece should always be prohobitted', async () => addArea().then(area => {
+                expect(() => areas.setAreaParent(testUser, area.metadata.area_id, area.metadata.area_id)).rejects.toThrowError(AreaStructureError)
+                expect(() => areas.setAreaParent(testUser, area.metadata.area_id, area.metadata.area_id)).rejects.toThrowError('You cannot set self as a parent')
+            }))
     })
 })

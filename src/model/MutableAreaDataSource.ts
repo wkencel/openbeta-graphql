@@ -26,7 +26,7 @@ import { sanitizeStrict } from '../utils/sanitize.js'
 import AreaDataSource from './AreaDataSource.js'
 import { changelogDataSource } from './ChangeLogDataSource.js'
 import { muuidToString, resolveTransaction, withTransaction } from '../utils/helpers.js'
-import { AreaRelationsEmbeddings } from './AreaRelationsEmbeddings.js'
+import { AreaRelationsEmbeddings, AreaStructureError } from './AreaRelationsEmbeddings.js'
 import { getCountriesDefaultGradeContext, GradeContexts } from '../GradeUtils.js'
 
 isoCountries.registerLocale(enJson)
@@ -410,6 +410,10 @@ export default class MutableAreaDataSource extends AreaDataSource {
    *  it as its own sequential operation.
   */
   async setAreaParent (user: MUUID, areaUuid: MUUID, newParent: MUUID, sessionCtx?: ClientSession): Promise<AreaType> {
+    if (muuidToString(areaUuid) === muuidToString(newParent)) {
+      throw new AreaStructureError('You cannot set self as a parent')
+    }
+
     return await resolveTransaction(this.areaModel, sessionCtx, async (session) => {
       const area = await this.areaModel.findOne({ 'metadata.area_id': areaUuid })
         .orFail()
@@ -422,7 +426,7 @@ export default class MutableAreaDataSource extends AreaDataSource {
       if (area.parent === undefined) {
         // This is a root node (country, likely) and so this is an operation with
         // high level privliges that are currently not enumerated.
-        throw new Error('You cannot migrate, what appears to be, a country.')
+        throw new AreaStructureError('You cannot migrate, what appears to be, a country.')
       }
 
       // Retrieve the current parent for this area.
@@ -441,10 +445,18 @@ export default class MutableAreaDataSource extends AreaDataSource {
 
       const nextParent = await this.areaModel.findOne({ 'metadata.area_id': newParent }).orFail().session(session)
 
+      // We need to validate that a circular reference has not been invoked.
+      // Essentially, we cannot specify a parent reference if we have that parent somewhere in our decendants.
+      if (
+        area.embeddedRelations.children.includes(nextParent._id) ||
+        await this.relations.hasDescendent(area._id, nextParent._id, session)
+      ) {
+        throw new AreaStructureError('CIRCULAR STRUCTURE: The requested parent is already a descendant, and so cannot also be a parent.')
+      }
+
       // By this point we are satisfied that there are no obvious reasons to reject this request, so we can begin saving
       // and producing effects in the context of this transaction.
       area.parent = nextParent._id
-      await this.relations.computeEmbeddedAncestors(area, session)
 
       const change = await changelogDataSource.create(session, user, OperationType.changeAreaParent)
 
@@ -459,8 +471,9 @@ export default class MutableAreaDataSource extends AreaDataSource {
         updatedBy: user
       })
 
-      const cursor = await area.save({ session })
-      return await cursor.toObject()
+      await area.save({ session })
+      await this.relations.computeEmbeddedAncestors(area, session)
+      return await this.areaModel.findById(area._id).orFail()
     })
   }
 

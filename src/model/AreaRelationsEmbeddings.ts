@@ -71,7 +71,7 @@ export class AreaRelationsEmbeddings {
    * remember: This function does not terminate at area passed in, rather it stops at that areas <.parent>.
    * This is out of step with how ancestors are computed elsewhere.
    */
-  async computeAncestorsFor (_id: mongoose.Types.ObjectId): Promise<Array<{ ancestor: AreaType }>> {
+  async computeAncestorsFor (_id: mongoose.Types.ObjectId, session: ClientSession): Promise<Array<{ ancestor: AreaType }>> {
     return await this.areaModel.aggregate([
       { $match: { _id } },
       {
@@ -96,6 +96,21 @@ export class AreaRelationsEmbeddings {
       },
       { $sort: { 'ancestor.level': -1 } }
     ])
+      .session(session)
+  }
+
+  /**
+   * For a given area, compute all areas that trace the path back to root.
+   * remember: This function does not terminate at area passed in, rather it stops at that areas <.parent>.
+   * This is out of step with how ancestors are computed elsewhere.
+   */
+  async hasDescendent (area: mongoose.Types.ObjectId, _id: mongoose.Types.ObjectId, session: ClientSession): Promise<boolean> {
+    return (await this.areaModel.findOne({
+      _id,
+      'embeddedRelations.ancestors': {
+        $elemMatch: { _id: area }
+      }
+    }).session(session)) !== null
   }
 
   /**
@@ -107,24 +122,33 @@ export class AreaRelationsEmbeddings {
    *
    * will be updated with the relevant values.
    */
-  async syncEmbeddedRelations (area: AreaSinkReference, session: ClientSession, ancestorPath?: DenormalizedAreaSummary[]): Promise<void> {
+  async syncEmbeddedRelations (
+    area: {
+      _id: mongoose.Types.ObjectId
+      area_name: string
+      metadata: { area_id: MUUID }
+    },
+    session: ClientSession,
+    ancestorPath?: DenormalizedAreaSummary[]
+  ): Promise<void> {
+    // If an ancestor path has not yet been computed then we can run that query here to initialize the path to this point,
+    // subsequently we can build the ancestors by just adding the current area to the path.
     if (ancestorPath === undefined) {
-      ancestorPath = (await this.computeAncestorsFor(area._id)).map(({ ancestor }) => ({
+      ancestorPath = (await this.computeAncestorsFor(area._id, session)).map(({ ancestor }) => ({
         name: ancestor.area_name,
         _id: ancestor._id,
         uuid: ancestor.metadata.area_id
       }))
     }
 
-    ancestorPath = [
-      ...ancestorPath,
-      {
-        name: area.area_name,
-        _id: area._id,
-        uuid: area.metadata.area_id
-      }]
+    ancestorPath.push({
+      name: area.area_name,
+      _id: area._id,
+      uuid: area.metadata.area_id
+    })
 
     const children = await this.areaModel.find(
+      { parent: area._id },
       { _id: 1, area_name: 1, 'metadata.area_id': 1 }
     )
 
@@ -133,7 +157,8 @@ export class AreaRelationsEmbeddings {
         { _id: area._id },
         {
           'embeddedRelations.ancestors': ancestorPath,
-          // We've gone through the trouble of fetching this data, so we will update.
+          // We've gone through the trouble of fetching this data, so we will update it
+          // since it costs us very little to do that here - but is technically a side-effect of the function.
           'embeddedRelations.children': children.map(area => ({
             name: area.area_name,
             _id: area._id,
@@ -146,8 +171,6 @@ export class AreaRelationsEmbeddings {
   }
 }
 
-interface AreaSinkReference {
-  _id: mongoose.Types.ObjectId
-  area_name: string
-  metadata: { area_id: MUUID }
+export class AreaStructureError extends Error {
+
 }

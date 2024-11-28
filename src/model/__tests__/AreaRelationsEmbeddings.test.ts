@@ -4,7 +4,7 @@ import MutableAreaDataSource from "../MutableAreaDataSource"
 import muid from 'uuid-mongodb'
 import { getAreaModel, createIndexes } from "../../db"
 import inMemoryDB from "../../utils/inMemoryDB"
-import { muuidToString } from "../../utils/helpers"
+import { muuidToString, resolveTransaction, useOrCreateTransaction } from "../../utils/helpers"
 
 export function embeddedRelationsReducer(path: AreaType[]) {
     let trace: DenormalizedAreaSummary[] = []
@@ -97,7 +97,8 @@ describe("updating of areas should propogate embeddedRelations", () => {
     }
 
     test('computing ancestors from reified node', async () => growTree().then(async (tree) => {
-        let computedAncestors = await areas.relations.computeAncestorsFor(tree.at(-1)!._id)
+        await useOrCreateTransaction(areas.areaModel, undefined, async (session) => {
+        let computedAncestors = await areas.relations.computeAncestorsFor(tree.at(-1)!._id, session)
 
         // We expect the mongo computation to pull down the same data as our locally constructed tree
         // caveat: the ancestor computation does not include the leaf.
@@ -114,6 +115,8 @@ describe("updating of areas should propogate embeddedRelations", () => {
             expect(current.ancestor._id.equals(tree[idx]._id))
             return current
         })
+    })
+
     }))
 
     test('ancestors should be computed on area add.', async () => growTree(5).then(async (tree) => {
@@ -131,20 +134,22 @@ describe("updating of areas should propogate embeddedRelations", () => {
     }))
 
     test("re-naming an area should update its pathTokens", async () => growTree(5).then(async tree => {
-        let treeLength = tree.length
-        let target = Math.floor(treeLength / 2)
+        await useOrCreateTransaction(areas.areaModel, undefined, async (session) => {
+            let treeLength = tree.length
+            let target = Math.floor(treeLength / 2)
 
-        await areas.updateArea(
-            testUser,
-            tree[target].metadata.area_id, {
-                areaName: 'updated name'
-            },
-        )
+            await areas.updateArea(
+                testUser,
+                tree[target].metadata.area_id, {
+                    areaName: 'updated name'
+                },
+            )
 
-        tree = (await areas.relations.computeAncestorsFor(tree.at(-1)!._id)).map( i => i.ancestor)
+            tree = (await areas.relations.computeAncestorsFor(tree.at(-1)!._id, session)).map( i => i.ancestor)
 
-        expect(tree[target].area_name).toEqual('updated name')
-        expect(tree[target].embeddedRelations.ancestors.map(i => i.name)[target]).toEqual('updated name')
+            expect(tree[target].area_name).toEqual('updated name')
+            expect(tree[target].embeddedRelations.ancestors.map(i => i.name)[target]).toEqual('updated name')
+        })
     }))
 
     test("re-naming a parent should update all descendant pathTokens", async () => growTree(5, 2).then(async tree => {
