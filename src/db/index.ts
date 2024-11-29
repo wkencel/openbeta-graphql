@@ -81,7 +81,7 @@ const SIGCODE = {
 }
 
 export const gracefulExit = async (exitCode: number | keyof typeof SIGCODE = 0): Promise<void> => {
-  await mongoose.connection.close()
+  await mongoose.connection.close(true)
 
   logger.info('Gracefully exiting')
   if (typeof exitCode === 'string') {
