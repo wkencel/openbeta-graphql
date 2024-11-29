@@ -81,14 +81,14 @@ const SIGCODE = {
 }
 
 export const gracefulExit = async (exitCode: number | keyof typeof SIGCODE = 0): Promise<void> => {
-  await mongoose.connection.close(function () {
-    logger.info('Gracefully exiting')
-    if (typeof exitCode === 'string') {
-      process.exit(SIGCODE[exitCode])
-    }
+  await mongoose.connection.close()
 
-    process.exit(exitCode)
-  })
+  logger.info('Gracefully exiting')
+  if (typeof exitCode === 'string') {
+    process.exit(SIGCODE[exitCode])
+  }
+
+  process.exit(exitCode)
 }
 
 export const defaultPostConnect = async (changeStreamListener = streamListener): Promise<ChangeStream> => {

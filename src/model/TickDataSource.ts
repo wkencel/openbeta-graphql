@@ -57,7 +57,8 @@ export default class TickDataSource extends MongoDataSource<TickType> {
    * @returns the new/updated tick
    */
   async editTick (filter: TickEditFilterType, updatedTick: TickInput): Promise<TickType | null> {
-    return await this.tickModel.findOneAndUpdate(filter, updatedTick, { new: true })
+    const rs = await this.tickModel.findOneAndUpdate(filter, updatedTick, { new: true })
+    return await rs?.toObject() ?? null
   }
 
   /**
@@ -105,15 +106,20 @@ export default class TickDataSource extends MongoDataSource<TickType> {
     return await this.tickModel.find({ userId: userIdObject._id.toUUID().toString() })
   }
 
-  async ticksByUserIdAndClimb (userId: string, climbId: string): Promise<TickType[]> {
-    return await this.tickModel.find({ userId, climbId })
+  /**
+   * Get all ticks by climb uuid and optional user uuid
+   * @param userId Optional user uuid
+   * @param climbId climb uuid
+   */
+  async ticksByUserIdAndClimb (climbId: string, userId?: string): Promise<TickType[]> {
+    return await this.tickModel.find({ ...(userId != null && { userId }), climbId }).sort({ dateClimbed: -1 }).lean()
   }
 
   static instance: TickDataSource
 
   static getInstance (): TickDataSource {
     if (TickDataSource.instance == null) {
-      TickDataSource.instance = new TickDataSource(mongoose.connection.db.collection('ticks'))
+      TickDataSource.instance = new TickDataSource({ modelOrCollection: mongoose.connection.db.collection('ticks') })
     }
     return TickDataSource.instance
   }

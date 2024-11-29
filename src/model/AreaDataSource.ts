@@ -44,15 +44,19 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
           // Add score conversion to climbs
           case 'path_tokens': {
             const pathFilter = filter as PathTokenParams
+            // In the event that we need an exact match we will filter on { name }[] for some path
+            // that matches exactly.
             if (pathFilter.exactMatch === true) {
-              acc.embeddedRelations.pathTokens = pathFilter.tokens
+              acc['embeddedRelations.ancestors'] = pathFilter.tokens.map(name => ({ name }))
             } else {
               const filter: Record<string, any> = {}
-              filter.$all = pathFilter.tokens
+              filter.$all = pathFilter.tokens.map(name => ({ name }))
+
               if (pathFilter.size !== undefined) {
                 filter.$size = pathFilter.size
               }
-              acc.embeddedRelations.pathTokens = filter
+
+              acc['embeddedRelations.ancestors'] = filter
             }
             break
           }
@@ -103,7 +107,7 @@ export default class AreaDataSource extends MongoDataSource<AreaType> {
   async findOneAreaByUUID (uuid: muuid.MUUID): Promise<AreaType> {
     const rs = await this.areaModel
       .aggregate([
-        { $match: { 'metadata.area_id': uuid, _deleting: { $exists: false } } },
+        { $match: { 'metadata.area_id': uuid, _deleting: { $eq: null } } },
         {
           $lookup: {
             from: 'climbs', // other collection name

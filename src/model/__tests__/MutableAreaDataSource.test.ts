@@ -1,13 +1,13 @@
+import { GraphQLError } from "graphql"
 import { getAreaModel, createIndexes } from "../../db"
 import inMemoryDB from "../../utils/inMemoryDB"
 import MutableAreaDataSource from "../MutableAreaDataSource"
 import muid, { MUUID } from 'uuid-mongodb'
 import { AreaType, OperationType } from "../../db/AreaTypes"
 import { ChangeRecordMetadataType } from "../../db/ChangeLogType"
-import { UserInputError } from "apollo-server-core"
-import { muuidToString, resolveTransaction, useOrCreateTransaction } from "../../utils/helpers"
-import { embeddedRelationsReducer } from "./AreaRelationsEmbeddings.test"
+import { muuidToString, useOrCreateTransaction } from "../../utils/helpers"
 import { AreaStructureError } from "../AreaRelationsEmbeddings"
+
 
 describe("Test area mutations", () => {
     let areas: MutableAreaDataSource
@@ -129,7 +129,7 @@ describe("Test area mutations", () => {
 
         test("area names should be unique in their parent context", () => addArea('test').then(async parent => {
             await addArea('Big ol boulder', { parent })
-            await expect(() => addArea('Big ol boulder', { parent })).rejects.toThrowError(UserInputError)
+            await expect(() => addArea('Big ol boulder', { parent })).rejects.toThrow(AreaStructureError)
         }))
       })
 
@@ -176,7 +176,7 @@ describe("Test area mutations", () => {
                 // name-uniqueness should not be global, so this shouldn't throw
                 areas.updateArea(testUser, divorcedArea.metadata.area_id, { areaName: area.area_name }),
                 // if we update one of the areas to have a name for which another area already exists, we should expect this to throw.
-                expect(() => areas.updateArea(testUser, newArea.metadata.area_id, { areaName: area.area_name })).rejects.toThrowError(UserInputError),
+                expect(() => areas.updateArea(testUser, newArea.metadata.area_id, { areaName: area.area_name })).rejects.toThrow(AreaStructureError),
             ])
         }))
       })
@@ -217,7 +217,7 @@ describe("Test area mutations", () => {
 
                     await expect(
                         () => areas.setAreaParent(testUser, area.metadata.area_id, otherArea.metadata.area_id)
-                    ).rejects.toThrowError(UserInputError)
+                    ).rejects.toThrow(AreaStructureError)
                 }))
 
             test('Updating an areas parents reference to the one already specified should throw', async () => addArea()
@@ -229,7 +229,7 @@ describe("Test area mutations", () => {
                         .setAreaParent(testUser, area.metadata.area_id, parent.metadata.area_id)
                     )
                         .rejects
-                        .toThrowError(UserInputError)
+                        .toThrow(AreaStructureError)
                 }))
 
             test('Updating an areas parents reference adds an area to its new parents children', async () => addArea(undefined)

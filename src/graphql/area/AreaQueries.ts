@@ -1,9 +1,9 @@
 import muuid, { MUUID } from 'uuid-mongodb'
-import { AreaType, ShadowArea } from '../../db/AreaTypes'
-import { Context } from '../../types'
+import { ShadowArea, AreaType } from '../../db/AreaTypes'
 import { validate } from 'uuid'
 import { IResolverObject } from 'graphql-middleware/dist/types'
 import { flatFieldSet } from '../gql-parse.js'
+import { GQLContext } from '../../types'
 import { DescendantQuery } from '../../model/AreaDataSource'
 
 interface StructureQuery {
@@ -12,18 +12,18 @@ interface StructureQuery {
 }
 
 const AreaQueries: IResolverObject = {
-  cragsWithin: async (_, { filter }, { dataSources }: Context): Promise<AreaType | null> => {
+  cragsWithin: async (_, { filter }, { dataSources }: GQLContext): Promise<AreaType | null> => {
     const { areas } = dataSources
     const { bbox, zoom } = filter
     return await areas.findCragsWithin(bbox, zoom)
   },
 
-  countries: async (_, params, { dataSources }: Context): Promise<AreaType[]> => {
+  countries: async (_, params, { dataSources }: GQLContext): Promise<AreaType[]> => {
     const { areas } = dataSources
     return await areas.listAllCountries()
   },
 
-  structure: async (_, params: StructureQuery, { dataSources }: Context, info): Promise<ShadowArea[]> => {
+  structure: async (_, params: StructureQuery, { dataSources }: GQLContext, info): Promise<ShadowArea[]> => {
     const { areas } = dataSources
     if (params.parent === undefined) {
       return await areas.descendants(undefined, {

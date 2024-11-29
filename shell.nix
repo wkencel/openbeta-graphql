@@ -8,13 +8,11 @@
 pkgs.mkShell {
   buildInputs = with pkgs; [
     mongodb-tools
-    yarn
+    (yarn.override { nodejs = nodejs_18; })
     mongodb-ce
     mongodb-compass
     mongosh
     gsettings-desktop-schemas
-
-    deno
   ];
 
   # MONGOMS_DOWNLOAD_URL = "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-ubuntu2404-8.0.1.tgz";
