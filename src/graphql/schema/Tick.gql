@@ -107,6 +107,9 @@ type TickType {
 
   """User public profile"""
   user: UserPublicProfile!
+
+  """The climb associated with this tick. Null when the climb doesn't exist in our database."""
+  climb: Climb
 }
 
 "The tick sources that openbeta supports."
