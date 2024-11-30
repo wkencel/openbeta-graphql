@@ -103,7 +103,10 @@ export default class TickDataSource extends MongoDataSource<TickType> {
       throw new Error('No such user')
     }
     // Unfortunately, userIds on ticks are stored as strings not MUUIDs.
-    return await this.tickModel.find({ userId: userIdObject._id.toUUID().toString() })
+    return await this.tickModel
+      .find({ userId: userIdObject._id.toUUID().toString() })
+      .sort({ dateClimbed: -1 })
+      .lean()
   }
 
   /**
@@ -112,7 +115,10 @@ export default class TickDataSource extends MongoDataSource<TickType> {
    * @param climbId climb uuid
    */
   async ticksByUserIdAndClimb (climbId: string, userId?: string): Promise<TickType[]> {
-    return await this.tickModel.find({ ...(userId != null && { userId }), climbId }).sort({ dateClimbed: -1 }).lean()
+    return await this.tickModel
+      .find({ ...(userId != null && { userId }), climbId })
+      .sort({ dateClimbed: -1 })
+      .lean()
   }
 
   static instance: TickDataSource
