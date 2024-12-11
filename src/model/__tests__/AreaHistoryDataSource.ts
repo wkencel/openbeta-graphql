@@ -1,19 +1,18 @@
 import muuid from 'uuid-mongodb'
-
 import MutableAreaDataSource from '../MutableAreaDataSource.js'
 import ChangeLogDataSource from '../ChangeLogDataSource.js'
 import { OperationType } from '../../db/AreaTypes.js'
 import inMemoryDB from '../../utils/inMemoryDB.js'
 import waitForExpect from 'wait-for-expect'
-import jest from 'jest-mock'
+import { Mock } from 'vitest'
 
 describe('Area history', () => {
   let areas: MutableAreaDataSource
-  let onChange: jest.Mock
+  let onChange: Mock
   const testUser = muuid.v4()
 
   beforeAll(async () => {
-    onChange = jest.fn()
+    onChange = vi.fn()
     await inMemoryDB.connect(onChange)
     await ChangeLogDataSource.getInstance()._testRemoveAll()
 

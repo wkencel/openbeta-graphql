@@ -1,6 +1,5 @@
 import mongoose from 'mongoose'
 import muuid from 'uuid-mongodb'
-import { jest } from '@jest/globals'
 
 import { getUserModel } from '../../db/index.js'
 import UserDataSource from '../UserDataSource.js'
@@ -27,7 +26,7 @@ describe('UserDataSource', () => {
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   it('should create a new user with just username', async () => {
@@ -143,7 +142,7 @@ describe('UserDataSource', () => {
 
     await users.createOrUpdateUserProfile(updater, input)
 
-    jest
+    vi
       .spyOn(UserDataSource, 'calculateLastUpdatedInDays')
       .mockImplementation(() => 14)
 

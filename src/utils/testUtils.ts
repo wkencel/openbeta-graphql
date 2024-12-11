@@ -1,5 +1,4 @@
 import jwt from 'jsonwebtoken'
-import { jest } from '@jest/globals'
 import request from 'supertest'
 import { ApolloServer } from '@apollo/server'
 import express from 'express'
@@ -37,7 +36,7 @@ export const queryAPI = async ({
   port = PORT
 }: QueryAPIProps): Promise<request.Response> => {
   // Avoid needing to pass in actual signed tokens.
-  const jwtSpy = jest.spyOn(jwt, 'verify')
+  const jwtSpy = vi.spyOn(jwt, 'verify')
   jwtSpy.mockImplementation(() => {
     return {
       // Roles defined at https://manage.auth0.com/dashboard/us/dev-fmjy7n5n/roles
@@ -70,7 +69,7 @@ export interface SetUpServerReturnType {
 export const setUpServer = async (): Promise<SetUpServerReturnType> => {
   await inMemoryDB.connect()
 
-  const { app, server } = await createServer()
+  const { app, server } = await createServer(false)
   return { app, server, inMemoryDB }
 }
 

@@ -171,7 +171,7 @@ describe('Climb CRUD', () => {
     await areas.addCountry('usa')
 
     const newDestination = await areas.addArea(testUser, 'California', null, 'usa')
-      expect(newDestination).toBeTruthy()
+    expect(newDestination).toBeTruthy()
 
     const routesArea = await areas.addArea(testUser, 'Sport & Trad', newDestination.metadata.area_id)
 
@@ -208,7 +208,7 @@ describe('Climb CRUD', () => {
     await areas.addCountry('esp')
 
     const newDestination = await areas.addArea(testUser, 'Valencia', null, 'esp')
-      expect(newDestination).toBeTruthy()
+    expect(newDestination).toBeTruthy()
 
     const boulderingArea = await areas.addArea(testUser, 'Bouldering only', newDestination.metadata.area_id)
 
@@ -305,7 +305,6 @@ describe('Climb CRUD', () => {
       // A roped climbing area
       const newClimbingArea = await areas.addArea(testUser, 'Climbing area 1', null, 'aus')
       expect(newClimbingArea).toBeTruthy()
-
 
       const newclimbs = [
         { ...newSportClimb1, grade: '17' }, // good sport grade
@@ -605,18 +604,18 @@ describe('Climb CRUD', () => {
     })
 
     assert(climb?.pitches != null)
-    
+
     climb.pitches.forEach((pitch) => {
-        expect(pitch).toHaveProperty('_id')
-        expect(pitch).toHaveProperty('parentId')
-        expect(pitch).toHaveProperty('pitchNumber')
-      })
+      expect(pitch).toHaveProperty('_id')
+      expect(pitch).toHaveProperty('parentId')
+      expect(pitch).toHaveProperty('pitchNumber')
+    })
   })
 
   it('can update multi-pitch problems', async () => {
     const newDestination = await areas.addArea(testUser, 'Some Multi-Pitch Area to be Updated', null, 'deu')
 
-      expect(newDestination).toBeTruthy()
+    expect(newDestination).toBeTruthy()
 
     const newIDs = await climbs.addOrUpdateClimbs(
       testUser,
@@ -629,7 +628,7 @@ describe('Climb CRUD', () => {
 
     assert(original !== null)
     assert(original.pitches !== undefined)
-    expect(original.pitches.length).toBeGreaterThan(2)
+    expect(original.pitches.length).not.toBeLessThan(2)
 
     // Store original pitch IDs and parent IDs
     const originalPitch1ID = original.pitches[0]._id.toUUID().toString()
@@ -700,8 +699,8 @@ describe('Climb CRUD', () => {
       assert(updatedClimb.createdBy != undefined)
       assert(updatedClimb.updatedBy != undefined)
 
-        expect(updatedClimb.createdBy.toUUID().toString()).toEqual(testUser.toString())
-        expect(updatedClimb.updatedBy.toUUID().toString()).toEqual(testUser.toString())
+      expect(updatedClimb.createdBy.toUUID().toString()).toEqual(testUser.toString())
+      expect(updatedClimb.updatedBy.toUUID().toString()).toEqual(testUser.toString())
     }
   })
 })

@@ -1,6 +1,5 @@
 import { ApolloServer } from '@apollo/server'
 import muuid from 'uuid-mongodb'
-import { jest } from '@jest/globals'
 import { queryAPI, setUpServer } from '../utils/testUtils.js'
 import { muuidToString } from '../utils/helpers.js'
 import { TickInput } from '../db/TickTypes.js'
@@ -9,8 +8,6 @@ import UserDataSource from '../model/UserDataSource.js'
 import { UpdateProfileGQLInput } from '../db/UserTypes.js'
 import { InMemoryDB } from '../utils/inMemoryDB.js'
 import express from 'express'
-
-jest.setTimeout(110000)
 
 describe('ticks API', () => {
   let server: ApolloServer

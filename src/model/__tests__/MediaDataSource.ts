@@ -180,9 +180,7 @@ describe('MediaDataSource', () => {
     }
     await media.addMediaObjects([mediaObj])
 
-    const rs2 = await expect(media.addMediaObjects([mediaObj])).rejects.toThrowError(/duplicate key error collection/i)
-
-    expect(rs2).toBeUndefined()
+    await expect(async () => await media.addMediaObjects([mediaObj])).rejects.toThrowError('duplicate key error collection')
   })
 
   it('should delete media', async () => {
@@ -196,7 +194,7 @@ describe('MediaDataSource', () => {
     const rs2 = await media.deleteMediaObject(rs[0]._id)
     expect(rs2).toBe(true)
 
-    await expect(media.deleteMediaObject(rs[0]._id)).rejects.toThrowError(/not found/i)
+    await expect(async () => await media.deleteMediaObject(rs[0]._id)).rejects.toThrowError('not found')
   })
 
   it('should not delete media with non-empty tags', async () => {
@@ -207,7 +205,7 @@ describe('MediaDataSource', () => {
     }
     ])
 
-    await expect(media.deleteMediaObject(rs[0]._id)).rejects.toThrowError(/Cannot delete media object with non-empty tags./i)
+    await expect(async () => await media.deleteMediaObject(rs[0]._id)).rejects.toThrowError('Cannot delete media object with non-empty tags.')
   })
 
   it('should return paginated media results', async () => {

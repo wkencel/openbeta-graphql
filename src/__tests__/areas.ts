@@ -1,6 +1,5 @@
 import { ApolloServer } from '@apollo/server'
 import muuid from 'uuid-mongodb'
-import { jest } from '@jest/globals'
 import MutableAreaDataSource from '../model/MutableAreaDataSource.js'
 import MutableOrganizationDataSource from '../model/MutableOrganizationDataSource.js'
 import { AreaType } from '../db/AreaTypes.js'
@@ -9,8 +8,6 @@ import { queryAPI, setUpServer } from '../utils/testUtils.js'
 import { muuidToString } from '../utils/helpers.js'
 import { InMemoryDB } from '../utils/inMemoryDB.js'
 import express from 'express'
-
-jest.setTimeout(60000)
 
 describe('areas API', () => {
   let server: ApolloServer

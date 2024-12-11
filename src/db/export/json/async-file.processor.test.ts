@@ -21,11 +21,13 @@ describe('file processor', () => {
     })
   }
 
-  function withFailedWriteOn (failingData: { name: string }) {
+  function withFailedWriteOn (failingData: { name: string }): Writer {
     return async (data, path) => {
+      console.log(data, failingData)
       if (data === JSON.stringify(failingData)) {
         return await Promise.reject('error')
       }
+
       return await writer(data, path)
     }
   }
@@ -42,7 +44,10 @@ describe('file processor', () => {
   it('should continue batch processing on error', async () => {
     const processor = createProcessor(withFailedWriteOn(testData[0]))
 
-    await expect(processor(testData, 0)).rejects.toContain('Failed to write 1/2 files')
+    // First, check that our failed writer fires as expected
+    await expect(() => withFailedWriteOn(testData[0])(JSON.stringify(testData[0]), 'path')).rejects.toContain('error')
+    // now in the context of a strem, we should expect 1 out of two possible files to fail
+    await expect(async () => await processor(testData, 0)).rejects.toThrow('Failed to write 1/2 files')
 
     assertWriterCalledFor(testData[1])
   })

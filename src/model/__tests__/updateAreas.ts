@@ -152,7 +152,7 @@ describe('Areas', () => {
 
   it('should not update country name and code', async () => {
     const country = await areas.addCountry('lao')
-      assert(country != null)
+    assert(country != null)
 
     await expect(areas.updateArea(testUser, country.metadata.area_id, { areaName: 'Foo' })).rejects.toThrowError()
 

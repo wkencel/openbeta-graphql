@@ -113,7 +113,7 @@ describe('Organization', () => {
 
       expect(updatedOrg).toBeDefined()
       assert(updatedOrg != null)
-      
+
       expect(updatedOrg.associatedAreaIds.map(muuidToString).sort())
         .toStrictEqual(document?.associatedAreaIds?.map(muuidToString).sort())
       expect(updatedOrg.excludedAreaIds.map(muuidToString).sort())

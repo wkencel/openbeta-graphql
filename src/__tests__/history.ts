@@ -1,6 +1,5 @@
 import { ApolloServer } from '@apollo/server'
 import muuid from 'uuid-mongodb'
-import { jest } from '@jest/globals'
 import MutableAreaDataSource from '../model/MutableAreaDataSource.js'
 import MutableOrganizationDataSource from '../model/MutableOrganizationDataSource.js'
 import MutableClimbDataSource from '../model/MutableClimbDataSource.js'
@@ -10,8 +9,6 @@ import { muuidToString } from '../utils/helpers.js'
 import { queryAPI, setUpServer } from '../utils/testUtils.js'
 import { InMemoryDB } from '../utils/inMemoryDB.js'
 import express from 'express'
-
-jest.setTimeout(60000)
 
 describe('history API', () => {
   let server: ApolloServer

@@ -13,7 +13,6 @@
     "@types/underscore": "^1.11.4",
     "cross-env": "^7.0.3",
     "husky": "^8.0.1",
-    "jest-extended": "^4.0.2",
     "mongodb-memory-server": "^10.1.2",
     "nock": "^13.3.0",
     "supertest": "^6.3.3",
@@ -71,7 +70,7 @@
   "scripts": {
     "lint": "yarn ts-standard",
     "fix": "yarn ts-standard --fix",
-    "test": "cross-env NODE_OPTIONS=\"--experimental-vm-modules\" jest --runInBand",
+    "test": "vitest run  --no-file-parallelism",
     "build": "tsc -p tsconfig.json",
     "build-release": "tsc  -p tsconfig.release.json",
     "clean": "tsc -b --clean && rm -rf build/*",

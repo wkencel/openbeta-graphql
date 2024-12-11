@@ -25,7 +25,7 @@ import BulkImportDataSource from './model/BulkImportDataSource.js'
 /**
  * Create a GraphQL server
  */
-export async function createServer (): Promise<{ app: express.Application, server: ApolloServer }> {
+export async function createServer (serve = true): Promise<{ app: express.Application, server: ApolloServer }> {
   const schema = applyMiddleware(
     graphqlSchema,
     (process.env.LOCAL_DEV_BYPASS_AUTH === 'true' ? localDevBypassAuthPermissions : permissions).generate(graphqlSchema)
@@ -66,6 +66,8 @@ export async function createServer (): Promise<{ app: express.Application, serve
     })
   )
 
-  await new Promise<void>(resolve => httpServer.listen({ port: 4000 }, resolve))
+  if (serve) {
+    await new Promise<void>(resolve => httpServer.listen({ port: 4000 }, resolve))
+  }
   return { app, server }
 }
