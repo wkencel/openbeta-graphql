@@ -47,10 +47,9 @@ describe('Areas', () => {
     const canada = await areas.addCountry('can')
     // Add 1st area to the country
     const bc = await areas.addArea(testUser, 'British Columbia', canada.metadata.area_id)
+    assert(bc != null)
+    assert(canada != null)
 
-    if (bc == null || canada == null) {
-      fail()
-    }
     expect(canada.metadata.lnglat).not.toMatchObject(geometry('Point', [0, 0]))
     expect(bc.area_name).toEqual('British Columbia')
 
@@ -123,9 +122,8 @@ describe('Areas', () => {
     await areas.addCountry('au')
     const a1 = await areas.addArea(testUser, 'One', null, 'au')
 
-    if (a1 == null) {
-      fail()
-    }
+    assert(a1 != null)
+
     // for testing area desccription is sanitized
     const iframeStr = '<iframe src="https://www.googlecom" title="Evil Iframe"></iframe>'
     const doc1: AreaEditableFieldsType = {
@@ -154,7 +152,8 @@ describe('Areas', () => {
 
   it('should not update country name and code', async () => {
     const country = await areas.addCountry('lao')
-    if (country == null) fail()
+      assert(country != null)
+
     await expect(areas.updateArea(testUser, country.metadata.area_id, { areaName: 'Foo' })).rejects.toThrowError()
 
     // eslint-disable-next-line
@@ -169,9 +168,9 @@ describe('Areas', () => {
     const or = await areas.addArea(testUser, 'OR', usa.metadata.area_id)
     const wa = await areas.addArea(testUser, 'WA', usa.metadata.area_id)
 
-    if (ca == null || or == null || wa == null) {
-      fail('Child area is null')
-    }
+    assert(ca != null, 'child area is null')
+    assert(or != null, 'child area is null')
+    assert(wa != null, 'child area is null')
 
     // eslint-disable-next-line
     await new Promise(res => setTimeout(res, 3000))
@@ -205,11 +204,11 @@ describe('Areas', () => {
     const gr = await areas.addCountry('grc')
     const kali = await areas.addArea(testUser, 'Kalymnos', gr.metadata.area_id)
 
-    if (kali == null) fail()
+    assert(kali != null)
 
     const arhi = await areas.addArea(testUser, 'Arhi', kali.metadata.area_id)
 
-    if (arhi == null) fail()
+    assert(arhi != null)
 
     // Try to delete 'Arhi' (expecting exception)
     await expect(areas.deleteArea(testUser, kali.metadata.area_id)).rejects.toThrow('subareas not empty')

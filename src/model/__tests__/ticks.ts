@@ -84,14 +84,12 @@ describe('Ticks', () => {
   it('should update a tick and return the proper information', async () => {
     const tick = await ticks.addTick(toTest)
 
-    if (tick == null) {
-      fail('Tick should not be null')
-    }
+    expect(tick).not.toBeNull()
+
     const newTick = await ticks.editTick({ _id: tick._id }, tickUpdate)
 
-    if (newTick == null) {
-      fail('The new tick should not be null')
-    }
+    expect(newTick).not.toBeNull()
+
     expect(newTick?._id).toEqual(tick._id)
     expect(newTick?.notes).toEqual(tickUpdate.notes)
     expect(newTick?.attemptType).toEqual(tickUpdate.attemptType)
@@ -101,9 +99,7 @@ describe('Ticks', () => {
   it('should remove a tick', async () => {
     const tick = await ticks.addTick(toTest)
 
-    if (tick == null) {
-      fail('Tick should not be null')
-    }
+    expect(tick).not.toBeNull()
     await ticks.deleteTick(tick._id)
 
     const newTick = await tickModel.findOne({ _id: tick._id })
@@ -115,10 +111,8 @@ describe('Ticks', () => {
   it('should add an array of ticks', async () => {
     const newTicks = await ticks.importTicks(testImport)
 
-    if (newTicks == null) {
-      fail(`Should add ${testImport.length} new ticks`)
-    }
-    expect(newTicks?.length).toEqual(testImport.length)
+    expect(newTicks).not.toBeNull()
+    expect(newTicks).toHaveLength(testImport.length)
 
     const tick1 = await tickModel.findOne({ _id: newTicks[0]._id })
     expect(tick1?._id).toEqual(newTicks[0]._id)
@@ -139,9 +133,7 @@ describe('Ticks', () => {
     await users.createOrUpdateUserProfile(userId, userProfileInput)
     const tick = await ticks.addTick(toTest)
 
-    if (tick == null) {
-      fail('Should add a new tick')
-    }
+    expect(tick).not.toBeNull()
 
     const newTicks = await ticks.ticksByUser({ userId })
 
@@ -153,9 +145,9 @@ describe('Ticks', () => {
     const tick = await ticks.addTick(toTest)
     const tick2 = await ticks.addTick(toTest2)
 
-    if (tick == null || tick2 == null) {
-      fail('Should add a new tick')
-    }
+    expect(tick).not.toBeNull()
+    expect(tick2).not.toBeNull()
+
     const userClimbTicks = await ticks.ticksByUserIdAndClimb(climbId, userId.toUUID().toString())
     expect(userClimbTicks.length).toEqual(1)
   })
@@ -163,9 +155,8 @@ describe('Ticks', () => {
   it('should delete all ticks with the specified userId', async () => {
     const newTicks = await ticks.importTicks(testImport)
 
-    if (newTicks == null) {
-      fail('Should add 3 new ticks')
-    }
+    expect(newTicks).not.toBeNull()
+    expect(newTicks).toHaveLength(3)
 
     await ticks.deleteAllTicks(userId.toUUID().toString())
     const newTick = await tickModel.findOne({ userId })
@@ -176,9 +167,8 @@ describe('Ticks', () => {
     const MPTick = await ticks.addTick(toTest)
     const OBTick = await ticks.addTick(tickUpdate)
 
-    if (MPTick == null || OBTick == null) {
-      fail('Should add two new ticks')
-    }
+    expect(MPTick).not.toBeNull()
+    expect(OBTick).not.toBeNull()
 
     await ticks.deleteImportedTicks(userId.toUUID().toString())
     const newTick = await tickModel.findOne({ _id: OBTick._id })

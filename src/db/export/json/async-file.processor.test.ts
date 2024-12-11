@@ -4,7 +4,7 @@ import path from 'path'
 interface TestType { name: string, path?: string[] }
 
 describe('file processor', () => {
-  const writer = jest.fn(async (_data, _path) => await Promise.resolve())
+  const writer = vi.fn(async (_data, _path) => await Promise.resolve())
   const testData: TestType[] = [{ name: 'test', path: ['one', 'two'] }, { name: 'test2' }]
   const testPath = 'testPath'
 

@@ -171,7 +171,7 @@ describe('Climb CRUD', () => {
     await areas.addCountry('usa')
 
     const newDestination = await areas.addArea(testUser, 'California', null, 'usa')
-    if (newDestination == null) fail('Expect new area to be created')
+      expect(newDestination).toBeTruthy()
 
     const routesArea = await areas.addArea(testUser, 'Sport & Trad', newDestination.metadata.area_id)
 
@@ -208,7 +208,7 @@ describe('Climb CRUD', () => {
     await areas.addCountry('esp')
 
     const newDestination = await areas.addArea(testUser, 'Valencia', null, 'esp')
-    if (newDestination == null) fail('Expect new area to be created')
+      expect(newDestination).toBeTruthy()
 
     const boulderingArea = await areas.addArea(testUser, 'Bouldering only', newDestination.metadata.area_id)
 
@@ -223,13 +223,13 @@ describe('Climb CRUD', () => {
 
     const newClimb = await climbs.findOneClimbByMUUID(muid.from(newIDs[0]))
 
-    if (newClimb == null) fail('Expecting new boulder problem to be added, but didn\'t find one')
+    assert(newClimb != null)
     expect(newClimb.name).toBe(newBoulderProblem1.name)
   })
 
   it('can delete new boulder problems', async () => {
     const newBoulderingArea = await areas.addArea(testUser, 'Bouldering area 1', null, 'fr')
-    if (newBoulderingArea == null) fail('Expect new area to be created')
+    expect(newBoulderingArea).toBeTruthy()
 
     const newIDs = await climbs.addOrUpdateClimbs(
       testUser,
@@ -270,7 +270,7 @@ describe('Climb CRUD', () => {
 
     // expect one to remain
     rs = await climbs.findOneClimbByMUUID(muid.from(newIDs[1]))
-    if (rs == null) fail('Expect climb 2 to exist')
+    assert(rs != null)
     expect(rs._id.toUUID().toString()).toEqual(newIDs[1])
 
     const areaRs = await areas.findOneAreaByUUID(newBoulderingArea.metadata.area_id)
@@ -281,7 +281,7 @@ describe('Climb CRUD', () => {
   it('handles mixed grades and disciplines correctly', async () => {
     await areas.addCountry('can')
     const newBoulderingArea = await areas.addArea(testUser, 'Bouldering area 1', null, 'can')
-    if (newBoulderingArea == null) fail('Expect new area to be created')
+    expect(newBoulderingArea).toBeTruthy()
 
     const newIDs = await climbs.addOrUpdateClimbs(
       testUser,
@@ -304,7 +304,8 @@ describe('Climb CRUD', () => {
     {
       // A roped climbing area
       const newClimbingArea = await areas.addArea(testUser, 'Climbing area 1', null, 'aus')
-      if (newClimbingArea == null) fail('Expect new area to be created')
+      expect(newClimbingArea).toBeTruthy()
+
 
       const newclimbs = [
         { ...newSportClimb1, grade: '17' }, // good sport grade
@@ -351,7 +352,7 @@ describe('Climb CRUD', () => {
     {
       // A bouldering area
       const newBoulderingArea = await areas.addArea(testUser, 'Bouldering area 1', null, 'aus')
-      if (newBoulderingArea == null) fail('Expect new area to be created')
+      expect(newBoulderingArea).toBeTruthy()
 
       const newIDs = await climbs.addOrUpdateClimbs(
         testUser,
@@ -379,7 +380,7 @@ describe('Climb CRUD', () => {
     {
       // A roped climbing area
       const newClimbingArea = await areas.addArea(testUser, 'Climbing area in Brazil', null, 'bra')
-      if (newClimbingArea == null) fail('Expect new area to be created in Brazil')
+      expect(newClimbingArea).toBeTruthy()
 
       const newclimbs = [
         { ...newSportClimb1, grade: 'VIsup' }, // good sport grade
@@ -426,7 +427,7 @@ describe('Climb CRUD', () => {
     {
       // A bouldering area
       const newBoulderingArea = await areas.addArea(testUser, 'Bouldering area 1', null, 'bra')
-      if (newBoulderingArea == null) fail('Expect new area to be created')
+      expect(newBoulderingArea).toBeTruthy()
 
       const newIDs = await climbs.addOrUpdateClimbs(
         testUser,
@@ -453,7 +454,7 @@ describe('Climb CRUD', () => {
 
     // A roped climbing area
     const newClimbingArea = await areas.addArea(testUser, 'Climbing area 1', null, 'deu')
-    if (newClimbingArea == null) fail('Expect new area to be created')
+    expect(newClimbingArea).toBeTruthy()
 
     const newIDs = await climbs.addOrUpdateClimbs(
       testUser,
@@ -481,7 +482,7 @@ describe('Climb CRUD', () => {
   it('can update boulder problems', async () => {
     const newDestination = await areas.addArea(testUser, 'Bouldering area A100', null, 'fr')
 
-    if (newDestination == null) fail('Expect new area to be created')
+    expect(newDestination).toBeTruthy()
 
     const newIDs = await climbs.addOrUpdateClimbs(
       testUser,
@@ -540,7 +541,7 @@ describe('Climb CRUD', () => {
   it('can update climb length, boltsCount & fa', async () => {
     const newDestination = await areas.addArea(testUser, 'Sport area Z100', null, 'fr')
 
-    if (newDestination == null) fail('Expect new area to be created')
+    expect(newDestination).toBeTruthy()
 
     const newIDs = await climbs.addOrUpdateClimbs(
       testUser,
@@ -576,7 +577,7 @@ describe('Climb CRUD', () => {
     await areas.addCountry('aut')
 
     const newDestination = await areas.addArea(testUser, 'Some Location with Multi-Pitch Climbs', null, 'aut')
-    if (newDestination == null) fail('Expect new area to be created')
+    expect(newDestination).toBeTruthy()
 
     const routesArea = await areas.addArea(testUser, 'Sport & Trad Multi-Pitches', newDestination.metadata.area_id)
 
@@ -602,22 +603,20 @@ describe('Climb CRUD', () => {
       },
       pitches: newClimbWithPitches.pitches
     })
-    // Validate each pitch
-    if (climb?.pitches != null) {
-      climb.pitches.forEach((pitch) => {
+
+    assert(climb?.pitches != null)
+    
+    climb.pitches.forEach((pitch) => {
         expect(pitch).toHaveProperty('_id')
         expect(pitch).toHaveProperty('parentId')
         expect(pitch).toHaveProperty('pitchNumber')
       })
-    } else {
-      fail('Pitches are missing either of required attributes id, parentId, pitchNumber')
-    }
   })
 
   it('can update multi-pitch problems', async () => {
     const newDestination = await areas.addArea(testUser, 'Some Multi-Pitch Area to be Updated', null, 'deu')
 
-    if (newDestination == null) fail('Expect new area to be created')
+      expect(newDestination).toBeTruthy()
 
     const newIDs = await climbs.addOrUpdateClimbs(
       testUser,
@@ -628,11 +627,9 @@ describe('Climb CRUD', () => {
     // Fetch the original climb
     const original = await climbs.findOneClimbByMUUID(muid.from(newIDs[0]))
 
-    // Check if 'original' is not null before accessing its properties
-    if ((original == null) || (original.pitches == null) || original.pitches.length < 2) {
-      fail('Original climb is null or does not have at least two pitches (as defined in the test case)')
-      return
-    }
+    assert(original !== null)
+    assert(original.pitches !== undefined)
+    expect(original.pitches.length).toBeGreaterThan(2)
 
     // Store original pitch IDs and parent IDs
     const originalPitch1ID = original.pitches[0]._id.toUUID().toString()
@@ -700,12 +697,11 @@ describe('Climb CRUD', () => {
       }
 
       // Check that the createdBy and updatedBy fields are not undefined before accessing their properties
-      if ((updatedClimb.createdBy != null) && (updatedClimb.updatedBy != null)) {
+      assert(updatedClimb.createdBy != undefined)
+      assert(updatedClimb.updatedBy != undefined)
+
         expect(updatedClimb.createdBy.toUUID().toString()).toEqual(testUser.toString())
         expect(updatedClimb.updatedBy.toUUID().toString()).toEqual(testUser.toString())
-      } else {
-        fail('createdBy or updatedBy is undefined')
-      }
     }
   })
 })

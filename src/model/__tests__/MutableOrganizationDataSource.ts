@@ -112,9 +112,8 @@ describe('Organization', () => {
       const updatedOrg = await organizations.updateOrganization(testUser, newOrg.orgId, document)
 
       expect(updatedOrg).toBeDefined()
-      if (updatedOrg == null) {
-        fail('should not reach here.')
-      }
+      assert(updatedOrg != null)
+      
       expect(updatedOrg.associatedAreaIds.map(muuidToString).sort())
         .toStrictEqual(document?.associatedAreaIds?.map(muuidToString).sort())
       expect(updatedOrg.excludedAreaIds.map(muuidToString).sort())

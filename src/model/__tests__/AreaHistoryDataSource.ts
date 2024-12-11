@@ -122,8 +122,7 @@ describe('Area history', () => {
   it('should record an Areas.deleteArea() call', async () => {
     const greece = await areas.addCountry('grc')
     const leonidio = await areas.addArea(testUser, 'Leonidio', greece.metadata.area_id)
-
-    if (leonidio == null) fail()
+    assert(leonidio != null)
 
     await areas.deleteArea(testUser, leonidio.metadata.area_id)
 
@@ -141,21 +140,13 @@ describe('Area history', () => {
     const spain = await areas.addCountry('esp')
     const margalef = await areas.addArea(testUser, 'margalef', spain.metadata.area_id)
 
-    if (margalef == null) fail()
+    assert(margalef != null)
 
     const newChild = await areas.addArea(testUser, 'One', margalef.metadata.area_id)
 
-    if (newChild == null) fail()
+    assert(newChild != null)
 
-    let deleted = false
-    try {
-      await areas.deleteArea(testUser, margalef.metadata.area_id)
-      fail('Shouldn\'t allow deletion when the area still has subareas')
-    } catch (e) {
-      deleted = true
-    }
-
-    expect(deleted).toBeTruthy()
+    await expect(async () => await areas.deleteArea(testUser, margalef.metadata.area_id)).rejects.toThrow()
 
     await waitForExpect(() => expect(onChange).toHaveBeenCalledTimes(5))
     const history = await ChangeLogDataSource.getInstance().getAreaChangeSets(spain.metadata.area_id)

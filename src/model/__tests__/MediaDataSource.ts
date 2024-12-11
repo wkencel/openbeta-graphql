@@ -61,17 +61,18 @@ describe('MediaDataSource', () => {
     await areas.addCountry('USA')
     areaForTagging1 = await areas.addArea(muuid.v4(), 'Yosemite NP', null, 'USA')
     areaForTagging2 = await areas.addArea(muuid.v4(), 'Lake Tahoe', null, 'USA')
-    if (areaForTagging1 == null || areaForTagging2 == null) fail('Fail to pre-seed test areas')
+
+    assert(areaForTagging1 != null, 'Fail to pre-seed test areas')
+    assert(areaForTagging2 != null, 'Fail to pre-seed test areas')
 
     const rs = await climbs.addOrUpdateClimbs(muuid.v4(), areaForTagging1.metadata.area_id, [newSportClimb1])
-    if (rs == null) fail('Fail to pre-seed test climbs')
+    assert(rs != null, 'Fail to pre-seed test areas')
     climbIdForTagging = muuid.from(rs[0])
 
     const rs2 = await media.addMediaObjects([TEST_MEDIA])
     testMediaObject = rs2[0]
-    if (testMediaObject == null) {
-      fail('Fail to create test media')
-    }
+
+    assert(testMediaObject != null, 'fail to create test media')
 
     areaTag1 = {
       mediaId: testMediaObject._id,
@@ -116,7 +117,7 @@ describe('MediaDataSource', () => {
   })
 
   it('should tag & remove an area tag', async () => {
-    if (areaForTagging1 == null) fail('Pre-seeded test area not found')
+    assert(areaForTagging1 != null, 'Pre-seeded test area not found')
 
     // verify the number tags before test
     let mediaObjects = await media.getOneUserMedia(TEST_MEDIA.userUuid, 10)
@@ -227,9 +228,7 @@ describe('MediaDataSource', () => {
 
     const expectedMedia = await media.addMediaObjects(newMediaListInput)
 
-    if (expectedMedia == null) {
-      fail('Seeding test media fail')
-    }
+    assert(expectedMedia != null, 'seeding test media fail')
 
     // reverse because getOneUserMediaPagination() returns most recent first
     expectedMedia.reverse()
