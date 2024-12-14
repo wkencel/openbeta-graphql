@@ -1,177 +1,130 @@
 import { produce } from 'immer'
-import TickDataSource from '../TickDataSource.js'
-import { getTickModel, getUserModel } from '../../db/index.js'
-import { TickInput } from '../../db/TickTypes.js'
+import { TickInput, TickType } from '../../db/TickTypes.js'
+import { dataFixtures } from '../../__tests__/fixtures/data.fixtures.js'
+import { muuidToString } from '../../utils/helpers.js'
 import muuid from 'uuid-mongodb'
-import UserDataSource from '../UserDataSource.js'
-import { UpdateProfileGQLInput } from '../../db/UserTypes.js'
-import inMemoryDB from '../../utils/inMemoryDB.js'
 
-const userId = muuid.v4()
-
-const toTest: TickInput = {
-  name: 'Small Dog',
-  notes: 'Sandbagged',
-  climbId: 'c76d2083-6b8f-524a-8fb8-76e1dc79833f',
-  userId: userId.toUUID().toString(),
-  style: 'Lead',
-  attemptType: 'Onsight',
-  dateClimbed: new Date('2012-12-12'),
-  grade: '5.7',
-  source: 'MP'
+interface LocalContext {
+  tickImportData: TickInput[]
+  tickData: TickInput
+  tickUpdateData: TickInput
+  tick: TickType
 }
 
-const toTest2: TickInput = {
-  name: 'Sloppy Peaches',
-  notes: 'v sloppy',
-  climbId: 'b767d949-0daf-5af3-b1f1-626de8c84b2a',
-  userId: userId.toUUID().toString(),
-  style: 'Lead',
-  attemptType: 'Flash',
-  dateClimbed: new Date('2012-10-15'),
-  grade: '5.10',
-  source: 'MP'
-}
-
-const tickUpdate: TickInput = produce(toTest, draft => {
-  draft.notes = 'Not sandbagged'
-  draft.attemptType = 'Fell/Hung'
-  draft.source = 'OB'
+const it = dataFixtures.extend<LocalContext>({
+  tickImportData: async ({ task, userUuid, climb }, use) => await use(
+    Array.from({ length: 20 }).map((_, idx) => (
+      {
+        name: `${task.id}-${idx}`,
+        notes: 'Sandbagged',
+        climbId: muuidToString(climb._id),
+        userId: userUuid,
+        style: 'Lead',
+        attemptType: 'Onsight',
+        dateClimbed: new Date(),
+        grade: '5.7',
+        source: 'MP'
+      }
+    ))),
+  tickData: async ({ task, userUuid }, use) => await use({
+    name: 'Small Dog',
+    notes: 'Sandbagged',
+    climbId: 'c76d2083-6b8f-524a-8fb8-76e1dc79833f',
+    userId: userUuid,
+    style: 'Lead',
+    attemptType: 'Onsight',
+    dateClimbed: new Date('2012-12-12'),
+    grade: '5.7',
+    source: 'MP'
+  }),
+  tickUpdateData: async ({ tickData }, use) => await use(produce(tickData, draft => {
+    draft.notes = 'Not sandbagged'
+    draft.attemptType = 'Fell/Hung'
+    draft.source = 'OB'
+  })),
+  tick: async ({ ticks, tickData }, use) => await use(await ticks.addTick(tickData))
 })
 
-const testImport: TickInput[] = [
-  toTest, toTest2, tickUpdate
-]
-
 describe('Ticks', () => {
-  let ticks: TickDataSource
-  const tickModel = getTickModel()
-
-  let users: UserDataSource
-
-  beforeAll(async () => {
-    console.log('#BeforeAll Ticks')
-    await inMemoryDB.connect()
-
-    try {
-      await getTickModel().collection.drop()
-      await getUserModel().collection.drop()
-    } catch (e) {
-      console.log('Cleaning db')
-    }
-
-    ticks = TickDataSource.getInstance()
-    users = UserDataSource.getInstance()
-  })
-
-  afterAll(async () => {
-    await inMemoryDB.close()
-  })
-
-  afterEach(async () => {
-    await getTickModel().collection.drop()
-    await tickModel.ensureIndexes()
-  })
-
   // test adding tick
-  it('should create a new tick for the associated climb', async () => {
-    const tick = await ticks.addTick(toTest)
-    const newTick = await tickModel.findOne({ userId: toTest.userId })
+  it('should create a new tick for the associated climb', async ({ ticks, tickData }) => {
+    const tick = await ticks.addTick(tickData)
+    const newTick = await ticks.tickModel.findOne({ userId: tickData.userId })
     expect(newTick?._id).toEqual(tick._id)
   })
 
   // test updating tick
-  it('should update a tick and return the proper information', async () => {
-    const tick = await ticks.addTick(toTest)
-
-    expect(tick).not.toBeNull()
-
-    const newTick = await ticks.editTick({ _id: tick._id }, tickUpdate)
+  it('should update a tick and return the proper information', async ({ ticks, tick, tickUpdateData }) => {
+    const newTick = await ticks.editTick({ _id: tick._id }, tickUpdateData)
 
     expect(newTick).not.toBeNull()
 
     expect(newTick?._id).toEqual(tick._id)
-    expect(newTick?.notes).toEqual(tickUpdate.notes)
-    expect(newTick?.attemptType).toEqual(tickUpdate.attemptType)
+    expect(newTick?.notes).toEqual(tickUpdateData.notes)
+    expect(newTick?.attemptType).toEqual(tickUpdateData.attemptType)
   })
 
   // test removing tick
-  it('should remove a tick', async () => {
-    const tick = await ticks.addTick(toTest)
-
-    expect(tick).not.toBeNull()
+  it('should remove a tick', async ({ ticks, tick }) => {
     await ticks.deleteTick(tick._id)
-
-    const newTick = await tickModel.findOne({ _id: tick._id })
-
+    const newTick = await ticks.tickModel.findOne({ _id: tick._id })
     expect(newTick).toBeNull()
   })
 
   // test importing ticks
-  it('should add an array of ticks', async () => {
-    const newTicks = await ticks.importTicks(testImport)
+  it('should add an array of ticks', async ({ ticks, tickImportData }) => {
+    const newTicks = await ticks.importTicks(tickImportData)
 
     expect(newTicks).not.toBeNull()
-    expect(newTicks).toHaveLength(testImport.length)
+    expect(newTicks).toHaveLength(tickImportData.length)
 
-    const tick1 = await tickModel.findOne({ _id: newTicks[0]._id })
+    const tick1 = await ticks.tickModel.findOne({ _id: newTicks[0]._id })
     expect(tick1?._id).toEqual(newTicks[0]._id)
 
-    const tick2 = await tickModel.findOne({ _id: newTicks[1]._id })
+    const tick2 = await ticks.tickModel.findOne({ _id: newTicks[1]._id })
     expect(tick2?._id).toEqual(newTicks[1]._id)
 
-    const tick3 = await tickModel.findOne({ _id: newTicks[2]._id })
+    const tick3 = await ticks.tickModel.findOne({ _id: newTicks[2]._id })
     expect(tick3?._id).toEqual(newTicks[2]._id)
   })
 
-  it('should grab all ticks by userId', async () => {
-    const userProfileInput: UpdateProfileGQLInput = {
-      userUuid: userId.toUUID().toString(),
-      username: 'cat.dog',
-      email: 'cat@example.com'
-    }
-    await users.createOrUpdateUserProfile(userId, userProfileInput)
-    const tick = await ticks.addTick(toTest)
-
-    expect(tick).not.toBeNull()
-
-    const newTicks = await ticks.ticksByUser({ userId })
-
-    expect(newTicks.length).toEqual(1)
+  it('should grab all ticks by userId', async ({ ticks, tick, userUuid, profile }) => {
+    const newTicks = await ticks.ticksByUser({ userId: profile._id })
+    newTicks.forEach(tick => expect(tick.userId).toEqual(userUuid))
+    expect(newTicks[0]._id.equals(tick._id))
   })
 
-  it('should grab all ticks by userId and climbId', async () => {
-    const climbId = 'c76d2083-6b8f-524a-8fb8-76e1dc79833f'
-    const tick = await ticks.addTick(toTest)
-    const tick2 = await ticks.addTick(toTest2)
+  it('should grab all ticks by userId and climbId', async ({ ticks, tickImportData, climb, userUuid }) => {
+    await Promise.all([
+      ticks.addTick(tickImportData[0]),
+      ticks.addTick(tickImportData[1]),
+      ticks.addTick({ ...tickImportData[1], userId: muuidToString(muuid.v4()) })
+    ])
 
-    expect(tick).not.toBeNull()
-    expect(tick2).not.toBeNull()
-
-    const userClimbTicks = await ticks.ticksByUserIdAndClimb(climbId, userId.toUUID().toString())
-    expect(userClimbTicks.length).toEqual(1)
+    const userClimbTicks = await ticks.ticksByUserIdAndClimb(muuidToString(climb._id), userUuid)
+    expect(userClimbTicks).toHaveLength(2)
   })
 
-  it('should delete all ticks with the specified userId', async () => {
-    const newTicks = await ticks.importTicks(testImport)
+  it('should delete all ticks with the specified userId', async ({ ticks, tickImportData, userUuid }) => {
+    const newTicks = await ticks.importTicks(tickImportData)
 
     expect(newTicks).not.toBeNull()
-    expect(newTicks).toHaveLength(3)
+    expect(newTicks).toHaveLength(tickImportData.length)
 
-    await ticks.deleteAllTicks(userId.toUUID().toString())
-    const newTick = await tickModel.findOne({ userId })
+    await ticks.deleteAllTicks(userUuid)
+    const newTick = await ticks.tickModel.findOne({ userId: userUuid })
     expect(newTick).toBeNull()
   })
 
-  it('should only delete MP imports', async () => {
-    const MPTick = await ticks.addTick(toTest)
-    const OBTick = await ticks.addTick(tickUpdate)
+  it('should only delete MP imports', async ({ ticks, tickData, tickUpdateData, userUuid }) => {
+    const MPTick = await ticks.addTick(tickData)
+    const OBTick = await ticks.addTick(tickUpdateData)
 
     expect(MPTick).not.toBeNull()
     expect(OBTick).not.toBeNull()
 
-    await ticks.deleteImportedTicks(userId.toUUID().toString())
-    const newTick = await tickModel.findOne({ _id: OBTick._id })
+    await ticks.deleteImportedTicks(userUuid)
+    const newTick = await ticks.tickModel.findOne({ _id: OBTick._id })
     expect(newTick?._id).toEqual(OBTick._id)
     expect(newTick?.notes).toEqual('Not sandbagged')
   })

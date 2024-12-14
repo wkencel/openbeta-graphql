@@ -1,18 +1,17 @@
 import { ApolloServer, BaseContext } from '@apollo/server'
 import express, { Application } from 'express'
-import { dbTest } from './mongo.fixtures'
-import { QueryAPIProps } from '../../utils/testUtils'
 import request from 'supertest'
 import jwt from 'jsonwebtoken'
-import { expressMiddleware } from '@apollo/server/dist/esm/express4'
+import { expressMiddleware } from '@apollo/server/express4'
 import bodyParser from 'body-parser'
 import { applyMiddleware } from 'graphql-middleware'
-import { localDevBypassAuthContext } from '../../auth/local-dev/middleware'
-import localDevBypassAuthPermissions from '../../auth/local-dev/permissions'
 import { graphqlSchema } from '../../graphql/resolvers'
 import cors from 'cors'
-import { muuidToString } from '../../utils/helpers'
-import muuid, { MUUID } from 'uuid-mongodb'
+import { dataFixtures } from './data.fixtures'
+import { createContext, permissions } from '../../auth'
+
+let server: ApolloServer<BaseContext>
+let app: Application
 
 interface ServerTestFixtures {
   ctx: {
@@ -20,60 +19,72 @@ interface ServerTestFixtures {
     app: Application
   }
   query: (opts: QueryAPIProps) => Promise<request.Response>
-  user: MUUID
-  userUuid: string
 }
 
-export const serverTest = dbTest.extend<ServerTestFixtures>({
+export interface QueryAPIProps {
+  query?: string
+  operationName?: string
+  variables?: any
+  userUuid?: string
+  roles?: string[]
+  port?: number
+  endpoint?: string
+  app?: express.Application
+  body?: any
+}
+
+export const gqlTest = dataFixtures.extend<ServerTestFixtures>({
   ctx: async ({
-    task, climbs, areas, bulkImport,
+    climbs, areas, bulkImport,
     organizations,
     ticks,
     history,
     media,
     users
   }, use) => {
-    const schema = applyMiddleware(
-      graphqlSchema,
-      (localDevBypassAuthPermissions).generate(graphqlSchema)
-    )
-    const dataSources = ({
-      climbs,
-      areas,
-      bulkImport,
-      organizations,
-      ticks,
-      history,
-      media,
-      users
-    })
+    if (app === undefined) {
+      app = express()
+    }
 
-    const app = express()
+    if (server === undefined) {
+      const schema = applyMiddleware(
+        graphqlSchema,
+        permissions.generate(graphqlSchema)
+      )
 
-    const server = new ApolloServer({
-      schema,
-      introspection: false,
-      plugins: []
-    })
-    // server must be started before applying middleware
-    await server.start()
-
-    const context = localDevBypassAuthContext
-
-    app.use('/',
-      bodyParser.json({ limit: '10mb' }),
-      cors<cors.CorsRequest>(),
-      express.json(),
-      expressMiddleware(server, {
-        context: async ({ req }) => ({ dataSources, ...await context({ req }) })
+      const dataSources = ({
+        climbs,
+        areas,
+        bulkImport,
+        organizations,
+        ticks,
+        history,
+        media,
+        users
       })
-    )
+
+      server = new ApolloServer({
+        schema,
+        introspection: false,
+        plugins: []
+      })
+
+      // server must be started before applying middleware
+      await server.start()
+
+      app.use('/',
+        bodyParser.json({ limit: '10mb' }),
+        cors<cors.CorsRequest>(),
+        express.json(),
+        expressMiddleware(server, {
+          context: async ({ req }) => ({ dataSources, ...await createContext({ req }) })
+        })
+      )
+    }
 
     await use({
       app, server
     })
-
-    await server.stop()
   },
 
   query: async ({ ctx }, use) => {
@@ -108,8 +119,5 @@ export const serverTest = dbTest.extend<ServerTestFixtures>({
         return await req
       }
     )
-  },
-
-  user: async ({ task }, use) => await use(muuid.mode('relaxed').from(task.id)),
-  userUuid: async ({ user }, use) => await use(muuidToString(user))
+  }
 })

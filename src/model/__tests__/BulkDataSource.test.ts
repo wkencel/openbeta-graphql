@@ -1,87 +1,59 @@
-import {ChangeStream} from 'mongodb';
-import muuid from 'uuid-mongodb';
-import ChangeLogDataSource from '../ChangeLogDataSource.js';
-import MutableClimbDataSource from '../MutableClimbDataSource.js';
 import {AreaType} from '../../db/AreaTypes.js';
 import {ClimbType} from '../../db/ClimbTypes.js';
-import streamListener from '../../db/edit/streamListener.js';
-import inMemoryDB from "../../utils/inMemoryDB.js";
 import {isFulfilled} from "../../utils/testUtils.js";
-import BulkImportDataSource from "../BulkImportDataSource.js";
 import {BulkImportAreaInputType, BulkImportResultType} from "../../db/BulkImportTypes.js";
+import { dataFixtures } from '../../__tests__/fixtures/data.fixtures.js';
+
+interface LocalContext {
+  assertBulkImport: (...input: BulkImportAreaInputType[]) => Promise<BulkImportResultType>
+}
+
+const it = dataFixtures.extend<LocalContext>({
+  assertBulkImport: async ({ climbs, user, bulkImport }, use) => {
+    const assertBulkImport = async (...input: BulkImportAreaInputType[]): Promise<BulkImportResultType> => {
+      const result = await bulkImport.bulkImport({
+        user: user,
+        input: {areas: input},
+        climbs
+      });
+
+      const addedAreas = await Promise.allSettled(
+        result.addedAreas.map((area) =>
+          bulkImport.findOneAreaByUUID(area.metadata.area_id)
+        )
+      );
+      const updatedAreas = await Promise.allSettled(
+        result.updatedAreas.map((area) =>
+          bulkImport.findOneAreaByUUID(area.metadata.area_id)
+        )
+      );
+      const addedOrUpdatedClimbs = await Promise.allSettled(
+        result.addedOrUpdatedClimbs.map((climb) => climbs.findOneClimbByMUUID(climb._id))
+      );
+
+      return {
+        addedAreas: addedAreas.filter(isFulfilled).map((p) => p.value),
+        updatedAreas: updatedAreas.filter(isFulfilled).map((p) => p.value),
+        addedOrUpdatedClimbs: addedOrUpdatedClimbs.filter(isFulfilled).map((p) => p.value as ClimbType),
+      };
+    };
+    await use(assertBulkImport)
+  }
+})
 
 describe('bulk import e2e', () => {
-  let bulkImport: BulkImportDataSource;
-  let climbs: MutableClimbDataSource;
-  let stream: ChangeStream;
-  const testUser = muuid.v4();
-
-  const assertBulkImport = async (...input: BulkImportAreaInputType[]): Promise<BulkImportResultType> => {
-    const result = await bulkImport.bulkImport({
-      user: testUser,
-      input: {areas: input},
-      climbs
-    });
-
-    const addedAreas = await Promise.allSettled(
-      result.addedAreas.map((area) =>
-        bulkImport.findOneAreaByUUID(area.metadata.area_id)
-      )
-    );
-    const updatedAreas = await Promise.allSettled(
-      result.updatedAreas.map((area) =>
-        bulkImport.findOneAreaByUUID(area.metadata.area_id)
-      )
-    );
-    const addedOrUpdatedClimbs = await Promise.allSettled(
-      result.addedOrUpdatedClimbs.map((climb) => climbs.findOneClimbByMUUID(climb._id))
-    );
-
-    return {
-      addedAreas: addedAreas.filter(isFulfilled).map((p) => p.value),
-      updatedAreas: updatedAreas.filter(isFulfilled).map((p) => p.value),
-      addedOrUpdatedClimbs: addedOrUpdatedClimbs.filter(isFulfilled).map((p) => p.value as ClimbType),
-    };
-  };
-
-  beforeAll(async () => {
-    await inMemoryDB.connect()
-    stream = await streamListener();
-  });
-
-  afterAll(async () => {
-    try {
-      await stream.close();
-      await inMemoryDB.close()
-    } catch (e) {
-      console.log('error closing mongoose', e);
-    }
-  });
-
-  beforeEach(async () => {
-    bulkImport = BulkImportDataSource.getInstance();
-    climbs = MutableClimbDataSource.getInstance();
-
-    await bulkImport.addCountry('us');
-  });
-
-  afterEach(async () => {
-    await ChangeLogDataSource.getInstance()._testRemoveAll();
-    await inMemoryDB.clear()
-  });
-
   describe('adding new areas and climbs', () => {
-    it('should commit a new minimal area to the database', async () => {
+    it('should commit a new minimal area to the database', async ({ assertBulkImport, country }) => {
       await expect(
         assertBulkImport({
           areaName: 'Minimal Area',
-          countryCode: 'us',
+          countryCode: country.shortCode,
         })
       ).resolves.toMatchObject({
         addedAreas: [
           {
             area_name: 'Minimal Area',
-            gradeContext: 'US',
+            gradeContext: country.gradeContext,
             metadata: {
               leaf: false,
               isBoulder: false,
@@ -91,12 +63,12 @@ describe('bulk import e2e', () => {
       });
     });
 
-    it('should rollback when one of the areas fails to import', async () => {
+    it('should rollback when one of the areas fails to import', async ({ assertBulkImport, country }) => {
       await expect(
         assertBulkImport(
           {
             areaName: 'Test Area',
-            countryCode: 'us',
+            countryCode: country.shortCode,
           },
           {
             areaName: 'Test Area 2',
@@ -105,11 +77,11 @@ describe('bulk import e2e', () => {
       ).rejects.toThrowError("Must provide parent Id or country code");
     });
 
-    it('should import nested areas with children', async () => {
+    it('should import nested areas with children', async ({ assertBulkImport, country }) => {
       await expect(
         assertBulkImport({
           areaName: 'Parent Area',
-          countryCode: 'us',
+          countryCode: country.shortCode,
           children: [
             {
               areaName: 'Child Area 2',
@@ -118,17 +90,17 @@ describe('bulk import e2e', () => {
         })
       ).resolves.toMatchObject({
         addedAreas: [
-          {area_name: 'Parent Area', gradeContext: 'US'},
-          {area_name: 'Child Area 2', gradeContext: 'US'},
+          {area_name: 'Parent Area', gradeContext: country.gradeContext},
+          {area_name: 'Child Area 2', gradeContext: country.gradeContext},
         ] as Partial<AreaType>[],
       });
     });
 
-    it('should import nested areas with children and grandchildren', async () => {
+    it('should import nested areas with children and grandchildren', async ({ assertBulkImport, country }) => {
       await expect(
         assertBulkImport({
           areaName: 'Test Area',
-          countryCode: 'us',
+          countryCode: country.shortCode,
           children: [
             {
               areaName: 'Test Area 2',
@@ -144,12 +116,12 @@ describe('bulk import e2e', () => {
         addedAreas: [
           {
             area_name: 'Test Area',
-            pathTokens: ['United States of America', 'Test Area'],
+            pathTokens: [country.area_name, 'Test Area'],
           },
           {
             area_name: 'Test Area 2',
             pathTokens: [
-              'United States of America',
+              country.area_name,
               'Test Area',
               'Test Area 2',
             ],
@@ -157,7 +129,7 @@ describe('bulk import e2e', () => {
           {
             area_name: 'Test Area 3',
             pathTokens: [
-              'United States of America',
+              country.area_name,
               'Test Area',
               'Test Area 2',
               'Test Area 3',
@@ -167,11 +139,11 @@ describe('bulk import e2e', () => {
       });
     });
 
-    it('should import leaf areas with climbs', async () => {
+    it('should import leaf areas with climbs', async ({ assertBulkImport, country }) => {
       await expect(
         assertBulkImport({
           areaName: 'Test Area',
-          countryCode: 'us',
+          countryCode: country.shortCode,
           climbs: [
             {
               name: 'Test Climb',
@@ -184,7 +156,7 @@ describe('bulk import e2e', () => {
         addedAreas: [
           {
             area_name: 'Test Area',
-            gradeContext: 'US',
+            gradeContext: country.gradeContext,
             metadata: {
               leaf: true,
               isBoulder: false,
@@ -210,16 +182,7 @@ describe('bulk import e2e', () => {
   });
 
   describe('updating existing areas', () => {
-    let area: AreaType;
-    beforeEach(async () => {
-      const result = await assertBulkImport({
-        areaName: 'Existing Area',
-        countryCode: 'us',
-      });
-      area = result.addedAreas[0] as AreaType;
-    });
-
-    it('should update an existing area', async () => {
+    it('should update an existing area', async ({ assertBulkImport, area }) => {
       await expect(
         assertBulkImport({
           uuid: area.metadata.area_id,

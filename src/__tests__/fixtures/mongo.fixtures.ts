@@ -1,9 +1,10 @@
+/* eslint-disable no-empty-pattern */
+// To explain the rule for this file: Object destructuring is REQUIRED for vitest fixtures because
+// of how they utilize autoloading.
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { ChangeStream, MongoClient } from 'mongodb'
 import mongoose from 'mongoose'
 import { checkVar, defaultPostConnect } from '../../db'
-import { testStreamListener } from '../../db/edit/streamListener'
-import { Mock } from 'vitest'
 import MutableAreaDataSource from '../../model/MutableAreaDataSource'
 import MutableClimbDataSource from '../../model/MutableClimbDataSource'
 import BulkImportDataSource from '../../model/BulkImportDataSource'
@@ -12,6 +13,8 @@ import MutableMediaDataSource from '../../model/MutableMediaDataSource'
 import MutableOrganizationDataSource from '../../model/MutableOrganizationDataSource'
 import TickDataSource from '../../model/TickDataSource'
 import UserDataSource from '../../model/UserDataSource'
+import { MUUID } from 'uuid-mongodb'
+import { BaseChangeRecordType, ChangeLogType } from '../../db/ChangeLogType'
 
 /**
  * In-memory Mongo replset used for testing.
@@ -19,9 +22,8 @@ import UserDataSource from '../../model/UserDataSource'
  * Need a replset to faciliate transactions.
  */
 let mongod: MongoMemoryReplSet
-const onChange: Mock = vi.fn()
-let stream: ChangeStream
 let uri: string
+let stream: ChangeStream
 
 beforeAll(async () => {
   mongod = await MongoMemoryReplSet.create({
@@ -32,15 +34,7 @@ beforeAll(async () => {
   uri = await mongod.getUri(checkVar('MONGO_DBNAME'))
   await mongoose.connect(uri, { autoIndex: false })
   mongoose.set('debug', false) // Set to 'true' to enable verbose mode
-
-  stream = await defaultPostConnect(async () => await testStreamListener(onChange))
-})
-
-afterAll(async () => {
-  await stream?.close()
-  await mongoose.connection.dropDatabase()
-  await mongoose.connection.close()
-  await mongod.stop()
+  stream = await defaultPostConnect()
 })
 
 interface DbTestContext {
@@ -56,6 +50,9 @@ interface DbTestContext {
   history: ChangeLogDataSource
   media: MutableMediaDataSource
   users: UserDataSource
+  changeLog: ChangeLogDataSource
+
+  waitForChanges: (props: WaitProps) => Promise<void>
 }
 
 export const dbTest = test.extend<DbTestContext>({
@@ -97,5 +94,44 @@ export const dbTest = test.extend<DbTestContext>({
   ticks: async ({ }, use) => await use(TickDataSource.getInstance()),
   history: async ({ }, use) => await use(ChangeLogDataSource.getInstance()),
   media: async ({ }, use) => await use(MutableMediaDataSource.getInstance()),
-  users: async ({ }, use) => await use(UserDataSource.getInstance())
+  users: async ({ }, use) => await use(UserDataSource.getInstance()),
+  changeLog: async ({ }, use) => await use(ChangeLogDataSource.getInstance()),
+
+  waitForChanges: async ({ changeLog, task }, use) => {
+    const changeStream = changeLog.changeLogModel.collection.watch<ChangeLogType>()
+
+    async function wait (props: WaitProps): Promise<void> {
+      return await new Promise<void>((resolve) => {
+        const listener = changeStream.on('change', (doc) => {
+          let changes: BaseChangeRecordType[]
+
+          if (doc.operationType === 'insert') {
+            changes = doc.fullDocument.changes
+          } else if (doc.operationType === 'update') {
+            assert(doc.updateDescription.updatedFields?.changes)
+            changes = doc.updateDescription.updatedFields?.changes
+          } else {
+            // we may not know what to do here
+            return
+          }
+
+          if (changes[0] === undefined) return
+
+          if ((props.count === undefined && changes.length === 1) || changes.length === props.count) {
+            resolve()
+            listener.close()?.catch(console.warn)
+          }
+        })
+      })
+    }
+
+    await use(wait)
+    await changeStream.close()
+  }
 })
+
+interface WaitProps {
+  count?: number
+  // operation?: AreaOperationType | ClimbEditOperationType
+  document: { _id: mongoose.Types.ObjectId | MUUID }
+}

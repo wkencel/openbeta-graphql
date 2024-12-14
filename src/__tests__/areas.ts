@@ -1,50 +1,35 @@
-import { ApolloServer } from '@apollo/server'
-import muuid from 'uuid-mongodb'
-import MutableAreaDataSource from '../model/MutableAreaDataSource.js'
-import MutableOrganizationDataSource from '../model/MutableOrganizationDataSource.js'
 import { AreaType } from '../db/AreaTypes.js'
 import { OrganizationEditableFieldsType, OrganizationType, OrgType } from '../db/OrganizationTypes.js'
-import { queryAPI, setUpServer } from '../utils/testUtils.js'
 import { muuidToString } from '../utils/helpers.js'
-import { InMemoryDB } from '../utils/inMemoryDB.js'
-import express from 'express'
+import { gqlTest } from './fixtures/gql.fixtures.js'
+interface LocalContext {
+  includedChild: AreaType
+  excludedArea: AreaType
+  alphaFields: OrganizationEditableFieldsType
+  alphaOrg: OrganizationType
+}
+
+const it = gqlTest.extend<LocalContext>({
+  includedChild: async ({ addArea, area }, use) => await use(await addArea(undefined, { parent: area })),
+  excludedArea: async ({ addArea, area }, use) => await use(await addArea(undefined, { parent: area })),
+  alphaFields: async ({ excludedArea, task, area }, use) => await use({
+    displayName: task.id,
+    associatedAreaIds: [area.metadata.area_id],
+    excludedAreaIds: [excludedArea.metadata.area_id]
+  }),
+  alphaOrg: async ({ organizations, user, alphaFields }, use) => {
+    const org = await organizations.addOrganization(user, OrgType.localClimbingOrganization, alphaFields)
+      .then((res: OrganizationType | null) => {
+        if (res === null) throw new Error('Failure mocking organization.')
+        return res
+      })
+
+    await use(org)
+    await organizations.deleteFromCacheById(org._id)
+  }
+})
 
 describe('areas API', () => {
-  let server: ApolloServer
-  let user: muuid.MUUID
-  let userUuid: string
-  let app: express.Application
-  let inMemoryDB: InMemoryDB
-
-  // Mongoose models for mocking pre-existing state.
-  let areas: MutableAreaDataSource
-  let organizations: MutableOrganizationDataSource
-  let usa: AreaType
-  let ca: AreaType
-  let wa: AreaType
-
-  beforeAll(async () => {
-    ({ server, inMemoryDB, app } = await setUpServer())
-    // Auth0 serializes uuids in "relaxed" mode, resulting in this hex string format
-    // "59f1d95a-627d-4b8c-91b9-389c7424cb54" instead of base64 "WfHZWmJ9S4yRuTicdCTLVA==".
-    user = muuid.mode('relaxed').v4()
-    userUuid = muuidToString(user)
-  })
-
-  beforeEach(async () => {
-    await inMemoryDB.clear()
-    areas = MutableAreaDataSource.getInstance()
-    organizations = MutableOrganizationDataSource.getInstance()
-    usa = await areas.addCountry('usa')
-    ca = await areas.addArea(user, 'CA', usa.metadata.area_id)
-    wa = await areas.addArea(user, 'WA', usa.metadata.area_id)
-  })
-
-  afterAll(async () => {
-    await server.stop()
-    await inMemoryDB.close()
-  })
-
   describe('queries', () => {
     const areaQuery = `
       query area($input: ID) {
@@ -56,50 +41,50 @@ describe('areas API', () => {
         }
       }
     `
-    let alphaFields: OrganizationEditableFieldsType
-    let alphaOrg: OrganizationType
 
-    beforeEach(async () => {
-      alphaFields = {
-        displayName: 'USA without CA Org',
-        associatedAreaIds: [usa.metadata.area_id],
-        excludedAreaIds: [ca.metadata.area_id]
-      }
-      alphaOrg = await organizations.addOrganization(user, OrgType.localClimbingOrganization, alphaFields)
-        .then((res: OrganizationType | null) => {
-          if (res === null) throw new Error('Failure mocking organization.')
-          return res
-        })
-    })
-
-    it('retrieves an area omitting organizations that exclude it', async () => {
-      const response = await queryAPI({
+    it('retrieves an area omitting organizations that exclude it', async ({ query, userUuid, excludedArea }) => {
+      const response = await query({
         query: areaQuery,
         operationName: 'area',
-        variables: { input: ca.metadata.area_id },
-        userUuid,
-        app
+        variables: { input: muuidToString(excludedArea.metadata.area_id) },
+        userUuid
       })
+
       expect(response.statusCode).toBe(200)
       const areaResult = response.body.data.area
-      expect(areaResult.uuid).toBe(muuidToString(ca.metadata.area_id))
+      expect(areaResult).toBeTruthy()
+      expect(areaResult.uuid).toBe(muuidToString(excludedArea.metadata.area_id))
       // Even though alphaOrg associates with ca's parent, usa, it excludes
       // ca and so should not be listed.
       expect(areaResult.organizations).toHaveLength(0)
     })
 
-    it.each([userUuid, undefined])('retrieves an area and lists associated organizations', async (userId) => {
-      const response = await queryAPI({
+    it('retrieves an area and lists associated organizations', async ({ query, userUuid, includedChild, alphaOrg }) => {
+      const response = await query({
         query: areaQuery,
         operationName: 'area',
-        variables: { input: wa.metadata.area_id },
-        userUuid: userId,
-        app
+        variables: { input: muuidToString(includedChild.metadata.area_id) },
+        userUuid
       })
 
       expect(response.statusCode).toBe(200)
       const areaResult = response.body.data.area
-      expect(areaResult.uuid).toBe(muuidToString(wa.metadata.area_id))
+      expect(areaResult.uuid).toBe(muuidToString(includedChild.metadata.area_id))
+      expect(areaResult.organizations).toHaveLength(1)
+      expect(areaResult.organizations[0].orgId).toBe(muuidToString(alphaOrg.orgId))
+    })
+
+    it('retrieves an area and lists associated organizations, even with no auth context', async ({ query, includedChild, alphaOrg }) => {
+      const response = await query({
+        query: areaQuery,
+        operationName: 'area',
+        variables: { input: muuidToString(includedChild.metadata.area_id) }
+      })
+
+      expect(response.statusCode).toBe(200)
+      const areaResult = response.body.data.area
+      expect(areaResult.uuid).toBe(muuidToString(includedChild.metadata.area_id))
+      console.log(areaResult)
       expect(areaResult.organizations).toHaveLength(1)
       expect(areaResult.organizations[0].orgId).toBe(muuidToString(alphaOrg.orgId))
     })

@@ -5,6 +5,13 @@ export default defineConfig({
     exclude: ['**/*/fixtures'],
     globals: true,
     environment: 'node',
-  }
+
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        isolate: false,
+      },
+    }
+  },
 })
 

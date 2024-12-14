@@ -1,47 +1,10 @@
-import { ApolloServer } from '@apollo/server'
-import muuid from 'uuid-mongodb'
-import MutableAreaDataSource from '../model/MutableAreaDataSource.js'
-import MutableOrganizationDataSource from '../model/MutableOrganizationDataSource.js'
-import MutableClimbDataSource from '../model/MutableClimbDataSource.js'
-import { AreaType } from '../db/AreaTypes.js'
-import { OrganizationType, OrgType } from '../db/OrganizationTypes.js'
+import mongoose from 'mongoose'
+import { OrgType } from '../db/OrganizationTypes.js'
 import { muuidToString } from '../utils/helpers.js'
-import { queryAPI, setUpServer } from '../utils/testUtils.js'
-import { InMemoryDB } from '../utils/inMemoryDB.js'
-import express from 'express'
+import { gqlTest as it } from './fixtures/gql.fixtures.js'
+import muuid from 'uuid-mongodb'
 
 describe('history API', () => {
-  let server: ApolloServer
-  let user: muuid.MUUID
-  let userUuid: string
-  let app: express.Application
-  let inMemoryDB: InMemoryDB
-
-  // Mongoose models for mocking pre-existing state.
-  let areas: MutableAreaDataSource
-  let organizations: MutableOrganizationDataSource
-  let climbs: MutableClimbDataSource
-
-  beforeAll(async () => {
-    ({ server, inMemoryDB, app } = await setUpServer())
-    // Auth0 serializes uuids in "relaxed" mode, resulting in this hex string format
-    // "59f1d95a-627d-4b8c-91b9-389c7424cb54" instead of base64 "WfHZWmJ9S4yRuTicdCTLVA==".
-    user = muuid.mode('relaxed').v4()
-    userUuid = muuidToString(user)
-  })
-
-  beforeEach(async () => {
-    await inMemoryDB.clear()
-    areas = MutableAreaDataSource.getInstance()
-    organizations = MutableOrganizationDataSource.getInstance()
-    climbs = MutableClimbDataSource.getInstance()
-  })
-
-  afterAll(async () => {
-    await server.stop()
-    await inMemoryDB.close()
-  })
-
   describe('queries', () => {
     const FRAGMENT_CHANGE_HISTORY = `
       fragment ChangeHistoryFields on History {
@@ -86,39 +49,43 @@ describe('history API', () => {
       }
     `
 
-    let usa: AreaType
-    let ca: AreaType
-    let alphaOrg: OrganizationType
-    let climbIds: string[]
-
-    it('queries recent change history successfully', async () => {
+    it('queries recent change history successfully', async ({ user, userUuid, query, climbs, organizations, area, country }) => {
       // Make changes to be tracked.
-      usa = await areas.addCountry('usa')
-      ca = await areas.addArea(user, 'CA', usa.metadata.area_id)
       const alphaFields = {
         displayName: 'Alpha OpenBeta Club',
-        associatedAreaIds: [usa.metadata.area_id],
+        associatedAreaIds: [country.metadata.area_id],
         email: 'admin@alphaopenbeta.com'
       }
-      alphaOrg = await organizations.addOrganization(user, OrgType.localClimbingOrganization, alphaFields)
-      climbIds = await climbs.addOrUpdateClimbs(user, ca.metadata.area_id, [{ name: 'Alpha Climb' }])
+
+      const alphaOrg = await organizations.addOrganization(user, OrgType.localClimbingOrganization, alphaFields)
+      const climbIds = await climbs.addOrUpdateClimbs(user, area.metadata.area_id, [{ name: 'Alpha Climb' }])
 
       // Query for changes and ensure they are tracked.
-      const resp = await queryAPI({
+      const resp = await query({
         query: QUERY_RECENT_CHANGE_HISTORY,
         variables: { filter: {} },
-        userUuid,
-        app
+        userUuid
       })
+
       expect(resp.statusCode).toBe(200)
       const histories = resp.body.data.getChangeHistory
-      expect(histories.length).toBe(3)
 
-      // Latest change first
-      // Note: addCountry is not captured by history.
-      const [climbChange, orgChange, areaChange] = histories
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      const climb = await climbs.findOneClimbByMUUID(muuid.from(climbIds[0]))
 
-      expect(climbChange.operation).toBe('updateClimb')
+      assert(climb)
+      assert(climb?._change?.historyId)
+      assert(area._change?.historyId)
+      assert(alphaOrg._change?.historyId)
+
+      const areaChange = histories.find(item => area._change?.historyId.equals(new mongoose.Types.ObjectId(item.id)))
+      const orgChange = histories.find(item => alphaOrg._change?.historyId.equals(new mongoose.Types.ObjectId(item.id)))
+      const climbChange = histories.find(item => climb?._change?.historyId.equals(new mongoose.Types.ObjectId(item.id)))
+
+      assert(climbChange)
+      assert(orgChange)
+      assert(areaChange)
+
       expect(climbChange.editedBy).toBe(userUuid)
 
       /**
@@ -132,7 +99,7 @@ describe('history API', () => {
       const insertChange = climbChange.changes.filter(c => c.dbOp === 'insert')[0]
       const updateChange = climbChange.changes.filter(c => c.dbOp === 'update')[0]
       expect(insertChange.fullDocument.uuid).toBe(climbIds[0])
-      expect(updateChange.fullDocument.uuid).toBe(muuidToString(ca.metadata.area_id))
+      expect(updateChange.fullDocument.uuid).toBe(muuidToString(area.metadata.area_id))
 
       expect(orgChange.operation).toBe('addOrganization')
       expect(orgChange.editedBy).toBe(userUuid)

@@ -1,35 +1,14 @@
-import mongoose from 'mongoose'
 import muuid from 'uuid-mongodb'
-
-import { getUserModel } from '../../db/index.js'
 import UserDataSource from '../UserDataSource.js'
 import { UpdateProfileGQLInput } from '../../db/UserTypes.js'
-import inMemoryDB from '../../utils/inMemoryDB.js'
+import { dataFixtures as it } from '../../__tests__/fixtures/data.fixtures.js'
 
 describe('UserDataSource', () => {
-  let users: UserDataSource
-
-  beforeAll(async () => {
-    await inMemoryDB.connect()
-    const userModel = getUserModel()
-    try {
-      await userModel.collection.drop()
-    } catch (e) {
-      console.log('Cleaning up db before test')
-    }
-    await userModel.ensureIndexes()
-    users = new UserDataSource({ modelOrCollection: mongoose.connection.db.collection('users') })
-  })
-
-  afterAll(async () => {
-    await inMemoryDB.close()
-  })
-
   afterEach(() => {
     vi.clearAllMocks()
   })
 
-  it('should create a new user with just username', async () => {
+  it('should create a new user with just username', async ({ users }) => {
     const userUuid = muuid.v4()
     const updater = muuid.v4()
     const input: UpdateProfileGQLInput = {
@@ -52,7 +31,7 @@ describe('UserDataSource', () => {
     expect(u?.updatedAt.getTime()).toBeLessThan(Date.now())
   })
 
-  it('should create a new user from username and other updatable fields', async () => {
+  it('should create a new user from username and other updatable fields', async ({ users }) => {
     const updater = muuid.v4()
     const userUuid = muuid.v4()
     const username = 'new-test-profile'
@@ -99,7 +78,7 @@ describe('UserDataSource', () => {
     })
   })
 
-  it('should require an email when creating new profile', async () => {
+  it('should require an email when creating new profile', async ({ users }) => {
     const updater = muuid.v4()
     const userUuid = muuid.v4()
     const input: UpdateProfileGQLInput = {
@@ -112,7 +91,7 @@ describe('UserDataSource', () => {
     ).rejects.toThrowError(/Email is required/i)
   })
 
-  it('should enforce a waiting period for username update', async () => {
+  it('should enforce a waiting period for username update', async ({ users }) => {
     const updater = muuid.v4()
     const userUuid = muuid.v4()
     const input: UpdateProfileGQLInput = {
@@ -131,7 +110,7 @@ describe('UserDataSource', () => {
     ).rejects.toThrowError(/frequent update/i)
   })
 
-  it('should allow username update after the waiting period', async () => {
+  it('should allow username update after the waiting period', async ({ users }) => {
     const updater = muuid.v4()
     const userUuid = muuid.v4()
     const input: UpdateProfileGQLInput = {
@@ -158,7 +137,7 @@ describe('UserDataSource', () => {
     expect(updatedUser?.username).toEqual(newInput.username)
   })
 
-  it('should reject invalid website url', async () => {
+  it('should reject invalid website url', async ({ users }) => {
     const updater = muuid.v4()
     const userUuid = muuid.v4()
     const input: UpdateProfileGQLInput = {

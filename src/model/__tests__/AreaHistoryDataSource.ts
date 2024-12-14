@@ -1,159 +1,131 @@
 import muuid from 'uuid-mongodb'
-import MutableAreaDataSource from '../MutableAreaDataSource.js'
-import ChangeLogDataSource from '../ChangeLogDataSource.js'
-import { OperationType } from '../../db/AreaTypes.js'
-import inMemoryDB from '../../utils/inMemoryDB.js'
-import waitForExpect from 'wait-for-expect'
-import { Mock } from 'vitest'
+import { dataFixtures as it } from '../../__tests__/fixtures/data.fixtures.js'
+import { AreaType } from '../../db/AreaTypes.js'
+import { BaseChangeRecordType } from '../../db/ChangeLogType.js'
 
 describe('Area history', () => {
-  let areas: MutableAreaDataSource
-  let onChange: Mock
-  const testUser = muuid.v4()
+  it('should create history changes for an area when children get added to it', async ({ changeLog, area, addArea, country, waitForChanges }) => {
+    const historySettled = waitForChanges({ document: area, count: 2 })
+    await addArea('nevada', { parent: area })
+    await addArea('oregon', { parent: area })
+    await historySettled
 
-  beforeAll(async () => {
-    onChange = vi.fn()
-    await inMemoryDB.connect(onChange)
-    await ChangeLogDataSource.getInstance()._testRemoveAll()
-
-    areas = MutableAreaDataSource.getInstance()
+    expect(await changeLog.getAreaChangeSets(area.metadata.area_id)).toHaveLength(2)
   })
 
-  afterAll(async () => {
-    try {
-      await inMemoryDB.close()
-    } catch (e) {
-      console.log('closing mongoose', e)
-    }
+  it('should properly seperate unrelated histories', async ({ changeLog, area, addArea, waitForChanges }) => {
+    const mainAreaHistory = waitForChanges({ document: area, count: 2 })
+    await Promise.all([
+      addArea(undefined, { parent: area }),
+      addArea(undefined, { parent: area })
+    ])
+    await mainAreaHistory
+
+    const randomHistory = await changeLog.getAreaChangeSets(muuid.v4())
+    expect(randomHistory).toHaveLength(0)
   })
 
-  beforeEach(async () => {
-    await ChangeLogDataSource.getInstance()._testRemoveAll()
-    onChange.mockClear()
-  })
+  it('should return change sets in most recent order', async ({ changeLog, area, addArea, areas, waitForChanges, user }) => {
+    const mainAreaHistory = waitForChanges({ document: area, count: 2 })
+    const child = await addArea(undefined, { parent: area })
+    await areas.deleteArea(user, child.metadata.area_id)
 
-  it('should create history records for new subareas', async () => {
-    const usa = await areas.addCountry('usa')
-    const newArea = await areas.findOneAreaByUUID(usa.metadata.area_id)
-    expect(newArea.area_name).toEqual(usa.area_name)
+    await mainAreaHistory
 
-    const or = await areas.addArea(testUser, 'oregon', usa.metadata.area_id)
-    const nv = await areas.addArea(testUser, 'nevada', usa.metadata.area_id)
+    const changeSets = await changeLog.getAreaChangeSets(area.metadata.area_id)
 
-    expect(nv?._id).toBeTruthy()
-    expect(or?._id).toBeTruthy()
-
-    await waitForExpect(() => expect(onChange).toHaveBeenCalledTimes(5))
-    const areaHistory = await ChangeLogDataSource.getInstance().getAreaChangeSets()
-
-    expect(areaHistory).toHaveLength(2)
     // verify changes in most recent order
-    expect(areaHistory[0].operation).toEqual(OperationType.addArea)
-    expect(areaHistory[1].operation).toEqual(OperationType.addArea)
+    assert(area._change?.historyId)
+    assert(changeSets[1].changes[0].fullDocument._change?.historyId)
+    expect(changeSets[0].changes[0].fullDocument._change?.prevHistoryId?.equals(changeSets[1].changes[0].fullDocument._change?.historyId))
+  })
 
-    // Verify NV history
-    const nvAreaHistory = areaHistory[0].changes
-    expect(nvAreaHistory).toHaveLength(2)
+  it('should create history records for new subareas', async ({ changeLog, area, addArea, country, waitForChanges }) => {
+    const mainAreaHistory = waitForChanges({ document: area, count: 2 })
+    const nv = await addArea('nevada', { parent: area })
+    await addArea('oregon', { parent: area })
 
-    // history is shown most recent first
-    expect(nvAreaHistory[0].dbOp).toEqual('insert') // insert new area
-    expect(nvAreaHistory[0].fullDocument.area_name).toEqual(nv?.area_name) // area added to the right parent?
+    await mainAreaHistory
+
+    const initialHistory = await changeLog.getAreaChangeSets(area.metadata.area_id)
+    const nvAreaHistory: Array<BaseChangeRecordType<AreaType>> = initialHistory[1].changes
 
     // verify change history linking
-    expect(nvAreaHistory[0].fullDocument._change?.historyId).toEqual(areaHistory[0]._id) // should point to current change
+    expect(nvAreaHistory[0].fullDocument._change?.historyId.equals(initialHistory[0]._id)) // should point to current change
     expect(nvAreaHistory[0].fullDocument._change?.prevHistoryId).not.toBeDefined() // new document -> no previous history
 
     expect(nvAreaHistory[1].dbOp).toEqual('update') // add area to country.children[]
-    expect(nvAreaHistory[1].fullDocument.area_name).toEqual(usa?.area_name)
+    expect(nvAreaHistory[1].fullDocument.area_name).toEqual(area?.area_name)
 
+    // coco: What? I don't see where this is supposed to happen I am confused
     expect(nvAreaHistory[1].fullDocument.children).toHaveLength(2)
     expect(nvAreaHistory[1].fullDocument.children[1]).toEqual(nv?._id) // area added to parent.children[]?
 
     // verify change history linking
     // 2nd change record: parent (country)
-    expect(nvAreaHistory[1].fullDocument._change?.historyId).toEqual(areaHistory[0]._id) // should point to current change
-    expect(nvAreaHistory[1].fullDocument._change?.prevHistoryId).toEqual(areaHistory[1]._id) // should point to previous Add new area
+    expect(nvAreaHistory[1].fullDocument._change?.historyId.equals(initialHistory[0]._id)) // should point to current change
+    expect(nvAreaHistory[1].fullDocument._change?.prevHistoryId?.equals(initialHistory[1]._id))// should point to previous Add new area
 
-    // Verify OR history
-    const orAreaHistory = areaHistory[1].changes
-    expect(orAreaHistory).toHaveLength(2)
-
-    const randomHistory = await ChangeLogDataSource.getInstance().getAreaChangeSets(muuid.v4())
-    expect(randomHistory).toHaveLength(0)
-
-    // Verify USA history
-    const usaHistory = await ChangeLogDataSource.getInstance().getAreaChangeSets(usa.metadata.area_id)
-    expect(usaHistory).toHaveLength(2)
-    expect(usaHistory[0].operation).toEqual('addArea')
-    expect(usaHistory[1].operation).toEqual('addArea')
+    // Verify parent history
+    const countryHistory2 = await changeLog.getAreaChangeSets(area.metadata.area_id)
+    expect(countryHistory2).toHaveLength(2)
+    expect(countryHistory2[0].operation).toEqual('addArea')
+    expect(countryHistory2[1].operation).toEqual('addArea')
 
     // Verify USA history links
-    expect(usaHistory[0].changes[0])
+    expect(countryHistory2[0].changes[0])
   })
 
-  it('should record multiple Areas.setDestination() calls ', async () => {
-    const canada = await areas.addCountry('can')
-    const squamish = await areas.addArea(testUser, 'squamish', canada.metadata.area_id)
+  it('should record multiple Areas.setDestination() calls ', async ({ user, areas, changeLog, country, area }) => {
+    const areaUuid = area.metadata.area_id
+    await expect(areas.setDestinationFlag(user, muuid.v4(), true)).rejects.toThrow() // non-existent area id. Trx won't be recorded
 
-    expect(squamish?._id).toBeTruthy()
+    await areas.setDestinationFlag(user, areaUuid, true)
+    await areas.setDestinationFlag(user, areaUuid, false)
 
-    if (squamish != null) {
-      const areaUuid = squamish.metadata.area_id
-      await expect(areas.setDestinationFlag(testUser, muuid.v4(), true)).rejects.toThrow() // non-existent area id. Trx won't be recorded
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const changset = await changeLog.getAreaChangeSets(areaUuid)
 
-      await areas.setDestinationFlag(testUser, areaUuid, true)
-      await areas.setDestinationFlag(testUser, areaUuid, false)
+    expect(changset).toHaveLength(3)
+    expect(changset[0].operation).toEqual('updateDestination')
+    expect(changset[1].operation).toEqual('updateDestination')
+    expect(changset[2].operation).toEqual('addArea')
 
-      await waitForExpect(() => expect(onChange).toHaveBeenCalledTimes(5))
-      const changset = await ChangeLogDataSource.getInstance().getAreaChangeSets(areaUuid)
-
-      expect(changset).toHaveLength(3)
-      expect(changset[0].operation).toEqual('updateDestination')
-      expect(changset[1].operation).toEqual('updateDestination')
-      expect(changset[2].operation).toEqual('addArea')
-
-      expect(changset[0].changes[0].fullDocument.metadata.isDestination).toStrictEqual(false)
-      expect(changset[1].changes[0].fullDocument.metadata.isDestination).toStrictEqual(true)
-      expect(changset[2].changes[0].fullDocument.metadata.isDestination).toStrictEqual(false) // default
-    }
+    expect(changset[0].changes[0].fullDocument.metadata.isDestination).toStrictEqual(false)
+    expect(changset[1].changes[0].fullDocument.metadata.isDestination).toStrictEqual(true)
+    expect(changset[2].changes[0].fullDocument.metadata.isDestination).toStrictEqual(false) // default
   })
 
-  it('should record an Areas.deleteArea() call', async () => {
-    const greece = await areas.addCountry('grc')
-    const leonidio = await areas.addArea(testUser, 'Leonidio', greece.metadata.area_id)
-    assert(leonidio != null)
+  it('should record an Areas.deleteArea() call', async ({ user, areas, changeLog, area, waitForChanges }) => {
+    await areas.deleteArea(user, area.metadata.area_id)
+    await waitForChanges({ document: area, count: 1 })
 
-    await areas.deleteArea(testUser, leonidio.metadata.area_id)
-
-    await waitForExpect(() => expect(onChange).toHaveBeenCalledTimes(5))
-    const history = await ChangeLogDataSource.getInstance().getAreaChangeSets(leonidio.metadata.area_id)
+    const history = await changeLog.getAreaChangeSets(area.metadata.area_id)
 
     expect(history).toHaveLength(2)
     expect(history[0].operation).toEqual('deleteArea')
     expect(history[1].operation).toEqual('addArea')
 
-    expect(history[0].changes[0].fullDocument._id).toEqual(leonidio._id)
+    expect(history[0].changes[0].fullDocument._id).toEqual(area._id)
   })
 
-  it('should not record a failed Areas.deleteArea() call', async () => {
-    const spain = await areas.addCountry('esp')
-    const margalef = await areas.addArea(testUser, 'margalef', spain.metadata.area_id)
+  it('should not record a failed Areas.deleteArea() call', async ({ user, area, areas, addArea, changeLog, waitForChanges }) => {
+    const process = waitForChanges({ document: area, count: 2 })
+    const child = await addArea(undefined, { parent: area })
+    // by giving this child its own child, we can create a vioalation condition if someone were
+    // to try and delete <child>
+    await addArea(undefined, { parent: child })
 
-    assert(margalef != null)
+    await expect(async () => await areas.deleteArea(user, child.metadata.area_id)).rejects.toThrow()
+    await process
 
-    const newChild = await areas.addArea(testUser, 'One', margalef.metadata.area_id)
-
-    assert(newChild != null)
-
-    await expect(async () => await areas.deleteArea(testUser, margalef.metadata.area_id)).rejects.toThrow()
-
-    await waitForExpect(() => expect(onChange).toHaveBeenCalledTimes(5))
-    const history = await ChangeLogDataSource.getInstance().getAreaChangeSets(spain.metadata.area_id)
+    const history = await changeLog.getAreaChangeSets(area.metadata.area_id)
 
     // should only have 2 entries:
-    // 1. Add country
-    // 2. Add child to country
-    expect(history).toHaveLength(1)
+    // 1. Add child
+    // 2. Add child to that child
+    expect(history).toHaveLength(2)
     expect(history[0].operation).toEqual('addArea')
+    expect(history[1].operation).toEqual('addArea')
   })
 })

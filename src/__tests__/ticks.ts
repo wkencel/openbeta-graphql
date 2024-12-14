@@ -1,32 +1,16 @@
-import { ApolloServer } from '@apollo/server'
-import muuid from 'uuid-mongodb'
-import { queryAPI, setUpServer } from '../utils/testUtils.js'
-import { muuidToString } from '../utils/helpers.js'
-import { TickInput } from '../db/TickTypes.js'
-import TickDataSource from '../model/TickDataSource.js'
-import UserDataSource from '../model/UserDataSource.js'
+import { TickInput, TickType } from '../db/TickTypes.js'
 import { UpdateProfileGQLInput } from '../db/UserTypes.js'
-import { InMemoryDB } from '../utils/inMemoryDB.js'
-import express from 'express'
+import { muuidToString } from '../utils/helpers.js'
+import { gqlTest } from './fixtures/gql.fixtures.js'
 
-describe('ticks API', () => {
-  let server: ApolloServer
-  let user: muuid.MUUID
-  let userUuid: string
-  let app: express.Application
-  let inMemoryDB: InMemoryDB
+interface LocalContext {
+  singleTickData: TickInput
+  tick: TickType
+}
 
-  // Mongoose models for mocking pre-existing state.
-  let ticks: TickDataSource
-  let users: UserDataSource
-  let tickOne: TickInput
-
-  beforeAll(async () => {
-    ({ server, inMemoryDB, app } = await setUpServer())
-    user = muuid.v4()
-    userUuid = muuidToString(user)
-
-    tickOne = {
+const it = gqlTest.extend<LocalContext>({
+  singleTickData: async ({ userUuid }, use) => {
+    await use({
       name: 'Route One',
       notes: 'Nice slab',
       climbId: 'c76d2083-6b8f-524a-8fb8-76e1dc79833f',
@@ -36,20 +20,14 @@ describe('ticks API', () => {
       dateClimbed: new Date('2016-07-20T17:30:15+05:30'),
       grade: '5.8',
       source: 'MP'
-    }
-  })
+    })
+  },
+  tick: async ({ ticks, singleTickData }, use) => {
+    await use(await ticks.addTick(singleTickData))
+  }
+})
 
-  beforeEach(async () => {
-    ticks = TickDataSource.getInstance()
-    users = UserDataSource.getInstance()
-    await inMemoryDB.clear()
-  })
-
-  afterAll(async () => {
-    await server.stop()
-    await inMemoryDB.close()
-  })
-
+describe('ticks API', () => {
   describe('queries', () => {
     const userQuery = `
       query userTicks($userId: MUUID, $username: String) {
@@ -82,58 +60,41 @@ describe('ticks API', () => {
       }
     `
 
-    it('queries by userId', async () => {
-      const userProfileInput: UpdateProfileGQLInput = {
-        userUuid,
-        username: 'cat.dog',
-        email: 'cat@example.com'
-      }
-      await users.createOrUpdateUserProfile(user, userProfileInput)
-      await ticks.addTick(tickOne)
-      const response = await queryAPI({
+    it('queries by userId', async ({ userUuid, profile, tick, query }) => {
+      const response = await query({
         query: userQuery,
-        variables: { userId: userUuid },
-        userUuid,
-        app
+        variables: { userId: muuidToString(profile._id) },
+        userUuid
+      })
+
+      expect(response.statusCode).toBe(200)
+      const res = response.body.data.userTicks
+      expect(res).toHaveLength(1)
+      expect(res[0].name).toBe(tick.name)
+    })
+
+    it('queries by username', async ({ userUuid, profile, tick, query }) => {
+      const response = await query({
+        query: userQuery,
+        variables: { username: profile.username },
+        userUuid
       })
       expect(response.statusCode).toBe(200)
       const res = response.body.data.userTicks
       expect(res).toHaveLength(1)
-      expect(res[0].name).toBe(tickOne.name)
+      expect(res[0].name).toBe(tick.name)
     })
 
-    it('queries by username', async () => {
-      const userProfileInput: UpdateProfileGQLInput = {
-        userUuid,
-        username: 'cat.dog',
-        email: 'cat@example.com'
-      }
-      await users.createOrUpdateUserProfile(user, userProfileInput)
-      await ticks.addTick(tickOne)
-      const response = await queryAPI({
-        query: userQuery,
-        variables: { username: 'cat.dog' },
-        userUuid,
-        app
-      })
-      expect(response.statusCode).toBe(200)
-      const res = response.body.data.userTicks
-      expect(res).toHaveLength(1)
-      expect(res[0].name).toBe(tickOne.name)
-    })
-
-    it('queries by userId and climbId', async () => {
-      await ticks.addTick(tickOne)
-      const response = await queryAPI({
+    it('queries by userId and climbId', async ({ tick, query, userUuid }) => {
+      const response = await query({
         query: userTickByClimbQuery,
-        variables: { userId: userUuid, climbId: tickOne.climbId },
-        userUuid,
-        app
+        variables: { userId: userUuid, climbId: tick.climbId },
+        userUuid
       })
       expect(response.statusCode).toBe(200)
       const res = response.body.data.userTicksByClimbId
       expect(res).toHaveLength(1)
-      expect(res[0].name).toBe(tickOne.name)
+      expect(res[0].name).toBe(tick.name)
     })
   })
 
@@ -170,29 +131,28 @@ describe('ticks API', () => {
         }
       }
     `
-    it('creates and updates a tick', async () => {
-      const createResponse = await queryAPI({
+    it('creates and updates a tick', async ({ query, userUuid, singleTickData }) => {
+      const createResponse = await query({
         query: createQuery,
-        variables: { input: tickOne },
+        variables: { input: singleTickData },
         userUuid,
-        roles: ['user_admin'],
-        app
+        roles: ['user_admin']
       })
 
       expect(createResponse.statusCode).toBe(200)
       const createTickRes = createResponse.body.data.tick
-      expect(createTickRes.name).toBe(tickOne.name)
-      expect(createTickRes.notes).toBe(tickOne.notes)
-      expect(createTickRes.climbId).toBe(tickOne.climbId)
-      expect(createTickRes.userId).toBe(tickOne.userId)
-      expect(createTickRes.style).toBe(tickOne.style)
-      expect(createTickRes.attemptType).toBe(tickOne.attemptType)
-      expect(createTickRes.dateClimbed).toBe(new Date(tickOne.dateClimbed).getTime())
-      expect(createTickRes.grade).toBe(tickOne.grade)
-      expect(createTickRes.source).toBe(tickOne.source)
+      expect(createTickRes.name).toBe(singleTickData.name)
+      expect(createTickRes.notes).toBe(singleTickData.notes)
+      expect(createTickRes.climbId).toBe(singleTickData.climbId)
+      expect(createTickRes.userId).toBe(singleTickData.userId)
+      expect(createTickRes.style).toBe(singleTickData.style)
+      expect(createTickRes.attemptType).toBe(singleTickData.attemptType)
+      expect(createTickRes.dateClimbed).toBe(new Date(singleTickData.dateClimbed).getTime())
+      expect(createTickRes.grade).toBe(singleTickData.grade)
+      expect(createTickRes.source).toBe(singleTickData.source)
       expect(createTickRes._id).toBeTruthy()
 
-      const updateResponse = await queryAPI({
+      const updateResponse = await query({
         query: updateQuery,
         variables: {
           input: {
@@ -208,8 +168,7 @@ describe('ticks API', () => {
           }
         },
         userUuid,
-        roles: [], // ['user_admin'],
-        app
+        roles: []
       })
 
       expect(updateResponse.statusCode).toBe(200)
